@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\Customer\MenuController;
 use App\Http\Controllers\Api\Customer\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -21,10 +22,17 @@ Route::prefix('v1')->group(function () {
     });
 
     // PHẦN A: CUSTOMER APIS (PHÂN HỆ KHÁCH HÀNG)
-    Route::prefix('customer')->middleware(['auth:sanctum', 'account.active', 'role:CUSTOMER'])->group(function () {
-        // A.1. Quản lý Hồ sơ, Địa chỉ & Dị ứng
-        Route::get('/profile', [ProfileController::class, 'show']);
-        Route::put('/profile', [ProfileController::class, 'update']);
+    Route::prefix('customer')->group(function () {
+        // A.2. Thực đơn, Tìm kiếm & Lọc món ăn (Public - Guest & Customer)
+        Route::get('/categories', [MenuController::class, 'categories']);
+        Route::get('/dishes', [MenuController::class, 'dishes']);
+
+        // Protected customer endpoints (Profile, Cart, Orders, Reservations)
+        Route::middleware(['auth:sanctum', 'account.active', 'role:CUSTOMER'])->group(function () {
+            // A.1. Quản lý Hồ sơ, Địa chỉ & Dị ứng
+            Route::get('/profile', [ProfileController::class, 'show']);
+            Route::put('/profile', [ProfileController::class, 'update']);
+        });
     });
 
     // PHẦN B: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
