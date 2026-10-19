@@ -14,6 +14,8 @@ Route::prefix('v1')->group(function () {
     // 0. Shared Authentication APIs
     Route::prefix('auth')->group(function () {
         Route::post('/register', [AuthController::class, 'register']);
+        Route::post('/login', [AuthController::class, 'login']);
+        Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
     });
 
     // Authenticated user test route

@@ -8,8 +8,10 @@ use App\Models\Account;
 use App\Models\Cart;
 use App\Models\Role;
 use App\Models\UserProfile;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class AuthService
 {
@@ -66,5 +68,76 @@ class AuthService
                 'tokenType' => 'Bearer',
             ];
         });
+    }
+
+    /**
+     * Authenticate account and return Sanctum token (USR-02).
+     *
+     * @param array $credentials
+     * @return array
+     * @throws AuthenticationException
+     * @throws HttpException
+     */
+    public function login(array $credentials): array
+    {
+        $username = $credentials['username'];
+        $plainPassword = $credentials['password'];
+        $rememberMe = (bool) ($credentials['rememberMe'] ?? false);
+
+        // STEP 1: Truy vấn tài khoản theo 'ten_dang_nhap'
+        $account = Account::with(['role', 'userProfile', 'cart'])
+            ->where('ten_dang_nhap', $username)
+            ->first();
+
+        if (!$account) {
+            throw new AuthenticationException('Invalid credentials');
+        }
+
+        // STEP 2: Kiểm tra mật khẩu (hỗ trợ cả BCrypt và legacy plaintext '123' từ file SQL mẫu)
+        $storedPassword = $account->mat_khau;
+        $isPasswordValid = false;
+
+        if (str_starts_with($storedPassword, '$2y$') || str_starts_with($storedPassword, '$2a$') || str_starts_with($storedPassword, '$2b$')) {
+            $isPasswordValid = Hash::check($plainPassword, $storedPassword);
+        } else {
+            // Hỗ trợ mật khẩu dạng rõ ('123') và tự động mã hóa nâng cấp lên BCrypt trong DB
+            if (hash_equals((string) $storedPassword, (string) $plainPassword)) {
+                $isPasswordValid = true;
+                $account->mat_khau = Hash::make($plainPassword);
+                $account->save();
+            }
+        }
+
+        if (!$isPasswordValid) {
+            throw new AuthenticationException('Invalid credentials');
+        }
+
+        // STEP 3: Kiểm tra trạng thái khóa tài khoản (USR-09)
+        if ($account->trang_thai === AccountStatus::LOCKED || $account->status === AccountStatus::LOCKED) {
+            throw new HttpException(403, 'Your account has been locked by Administrator');
+        }
+
+        // STEP 4: Cấp phát Sanctum Personal Access Token kèm thời gian hết hạn
+        $expiresAt = $rememberMe ? now()->addDays(30) : now()->addHours(8);
+        $roleAbility = $account->role?->ten_vai_tro === RoleType::ADMIN->value ? 'role:admin' : 'role:customer';
+        $token = $account->createToken('auth_token', [$roleAbility], $expiresAt);
+
+        return [
+            'account' => $account,
+            'accessToken' => $token->plainTextToken,
+            'tokenType' => 'Bearer',
+            'expiresAt' => $expiresAt->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Revoke current access token (USR-03).
+     *
+     * @param Account $account
+     * @return void
+     */
+    public function logout(Account $account): void
+    {
+        $account->currentAccessToken()?->delete();
     }
 }
