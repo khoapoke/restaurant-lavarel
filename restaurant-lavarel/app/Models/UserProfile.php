@@ -71,7 +71,7 @@ class UserProfile extends Model
     {
         return Attribute::make(
             get: fn () => $this->di_ung ?? [],
-            set: fn ($value) => ['di_ung' => is_array($value) ? json_encode($value) : $value]
+            set: fn ($value) => ['di_ung' => $value]
         );
     }
 
@@ -79,7 +79,7 @@ class UserProfile extends Model
     {
         return Attribute::make(
             get: fn () => $this->che_do_an ?? [],
-            set: fn ($value) => ['che_do_an' => is_array($value) ? json_encode($value) : $value]
+            set: fn ($value) => ['che_do_an' => $value]
         );
     }
 
@@ -87,7 +87,7 @@ class UserProfile extends Model
     {
         return Attribute::make(
             get: fn () => $this->so_dia_chi ?? [],
-            set: fn ($value) => ['so_dia_chi' => is_array($value) ? json_encode($value) : $value]
+            set: fn ($value) => ['so_dia_chi' => $value]
         );
     }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\Customer\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -16,6 +17,13 @@ Route::prefix('v1')->group(function () {
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/login', [AuthController::class, 'login']);
         Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+    });
+
+    // PHẦN A: CUSTOMER APIS (PHÂN HỆ KHÁCH HÀNG)
+    Route::prefix('customer')->middleware(['auth:sanctum', 'account.active', 'role:CUSTOMER'])->group(function () {
+        // A.1. Quản lý Hồ sơ, Địa chỉ & Dị ứng
+        Route::get('/profile', [ProfileController::class, 'show']);
+        Route::put('/profile', [ProfileController::class, 'update']);
     });
 
     // Authenticated user test route
