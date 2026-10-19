@@ -47,9 +47,12 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/items/{dishId}', [CartController::class, 'removeItem'])->whereNumber('dishId');
             });
 
-            // A.4. Checkout, Lịch sử Đơn hàng & Thanh toán QR (ORD-01 -> ORD-03)
+            // A.4. Checkout, Lịch sử Đơn hàng & Thanh toán QR (ORD-01 -> ORD-06)
             Route::prefix('orders')->group(function () {
+                Route::get('/', [OrderController::class, 'index']);
                 Route::post('/checkout', [OrderController::class, 'checkout']);
+                Route::get('/{orderId}', [OrderController::class, 'show'])->whereNumber('orderId');
+                Route::post('/{orderId}/cancel', [OrderController::class, 'cancel'])->whereNumber('orderId');
             });
         });
     });

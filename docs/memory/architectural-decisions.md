@@ -162,6 +162,19 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - **Khởi tạo Thanh toán (`THANH_TOAN`):** Tạo bản ghi thanh toán 1-1 với đơn hàng với `so_tien = tong_tien`, `trang_thai = PaymentStatus::UNPAID`, `phuong_thuc = PaymentMethod::CASH` hoặc `PaymentMethod::BANK_TRANSFER_QR`.
   - **Định dạng dữ liệu (`OrderResource`):** Trả về đầy đủ thông tin chuẩn hóa theo API specifications: `orderId`, `orderDate`, `status` (`OrderStatus::PENDING_CONFIRMATION` -> `"PENDING_CONFIRMATION"`), `totalAmount`, `shippingAddress`, `payment` (`OrderPaymentResource`), `items` (`OrderItemResource`).
 
+## ADR-014: Triển khai Lịch sử Đơn hàng, Chi tiết & Hủy đơn Khách hàng (ORD-04 đến ORD-06)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai các API quản lý vòng đời đơn hàng phía Khách hàng (Phần A.4): Xem danh sách lịch sử đơn (`ORD-04`), Xem chi tiết đơn (`ORD-05`), và Khách yêu cầu hủy đơn hàng (`ORD-06`).
+- **Quyết định:**
+  - **Bảo mật Phạm vi Truy cập (Chống lỗ hổng IDOR):** Mọi truy vấn lịch sử (`GET /orders`), chi tiết (`GET /orders/{orderId}`) và hủy đơn (`POST /orders/{orderId}/cancel`) đều bắt buộc kèm điều kiện `where('ma_tai_khoan', $accountId)`. Nếu khách hàng cố ý truy cập hoặc thao tác trên mã đơn hàng của người khác, hệ thống đồng nhất ném lỗi HTTP 404 `"Order not found"`.
+  - **Lịch sử Đơn hàng (`ORD-04`):** Hỗ trợ lọc theo trạng thái `status` (nhận cả mã Enum tiếng Anh như `COMPLETED` lẫn giá trị tiếng Việt như `'Đã giao'`), phân trang `perPage`, sắp xếp đơn mới nhất lên đầu (`orderByDesc('ma_don_hang')`), eager load quan hệ `dishes` và `payment` để tối ưu N+1 query.
+  - **Chi tiết Đơn hàng (`ORD-05`):** Sử dụng `OrderResource` chuẩn hóa toàn bộ dữ liệu đơn hàng, thanh toán kèm danh sách món chi tiết.
+  - **Quy tắc Máy Trạng thái khi Hủy đơn (`ORD-06`):**
+    - Khách hàng chỉ được phép hủy khi đơn hàng đang ở trạng thái `OrderStatus::PENDING_CONFIRMATION` (`N'Chờ xác nhận'`).
+    - Nếu đơn đã được xác nhận, đang nấu, sẵn sàng hoặc đã giao (`CONFIRMED`, `PREPARING`, `READY`, `COMPLETED`, hoặc đã `CANCELLED`), hệ thống chặn và trả về HTTP 409 Conflict với thông điệp: `"Order cannot be cancelled because it is already being prepared by the kitchen"`.
+    - Khi hủy thành công: Cập nhật `trang_thai = OrderStatus::CANCELLED`, đồng thời lưu `cancelReason` vào cột `ly_do_hoan_tien` trong bảng `THANH_TOAN` nếu có. Trả về HTTP 200 OK kèm payload `{ orderId, status: "CANCELLED" }`.
+
+
 
 
 

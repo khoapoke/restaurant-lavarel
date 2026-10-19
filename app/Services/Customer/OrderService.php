@@ -117,4 +117,96 @@ class OrderService
             return $order->load(['dishes', 'payment']);
         });
     }
+
+    /**
+     * Get paginated customer order history with status filter (ORD-04).
+     *
+     * @param int $accountId
+     * @param array<string, mixed> $params
+     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
+     */
+    public function getCustomerOrders(int $accountId, array $params = []): \Illuminate\Contracts\Pagination\LengthAwarePaginator
+    {
+        $query = Order::with(['dishes', 'payment'])
+            ->where('ma_tai_khoan', $accountId);
+
+        // Filter by status if provided (support English enum key or Vietnamese value)
+        if (!empty($params['status'])) {
+            $statusInput = trim($params['status']);
+            $matchedStatus = null;
+            foreach (OrderStatus::cases() as $case) {
+                if ($case->name === $statusInput || $case->value === $statusInput) {
+                    $matchedStatus = $case;
+                    break;
+                }
+            }
+            if ($matchedStatus) {
+                $query->where('trang_thai', $matchedStatus->value);
+            }
+        }
+
+        $query->orderByDesc('ma_don_hang');
+
+        $perPage = (int) ($params['perPage'] ?? 10);
+        return $query->paginate($perPage);
+    }
+
+    /**
+     * Get detailed order by ID belonging to customer (ORD-05).
+     *
+     * @param int $accountId
+     * @param int $orderId
+     * @return Order
+     * @throws HttpException
+     */
+    public function getCustomerOrderDetail(int $accountId, int $orderId): Order
+    {
+        $order = Order::with(['dishes', 'payment'])
+            ->where('ma_don_hang', $orderId)
+            ->where('ma_tai_khoan', $accountId)
+            ->first();
+
+        if (!$order) {
+            throw new HttpException(404, 'Order not found');
+        }
+
+        return $order;
+    }
+
+    /**
+     * Customer cancels order (ORD-06). Only allowed when status is PENDING_CONFIRMATION.
+     *
+     * @param int $accountId
+     * @param int $orderId
+     * @param string|null $cancelReason
+     * @return Order
+     * @throws HttpException
+     */
+    public function cancelCustomerOrder(int $accountId, int $orderId, ?string $cancelReason = null): Order
+    {
+        $order = Order::with('payment')
+            ->where('ma_don_hang', $orderId)
+            ->where('ma_tai_khoan', $accountId)
+            ->first();
+
+        if (!$order) {
+            throw new HttpException(404, 'Order not found');
+        }
+
+        // Quy tắc: Khách hàng chỉ có thể hủy đơn khi đơn hàng đang ở trạng thái PENDING_CONFIRMATION
+        if ($order->trang_thai !== OrderStatus::PENDING_CONFIRMATION) {
+            throw new HttpException(409, 'Order cannot be cancelled because it is already being prepared by the kitchen');
+        }
+
+        $order->trang_thai = OrderStatus::CANCELLED;
+        $order->save();
+
+        if ($order->payment && $cancelReason && empty($order->payment->ly_do_hoan_tien)) {
+            $order->payment->ly_do_hoan_tien = $cancelReason;
+            $order->payment->save();
+        }
+
+        return $order;
+    }
 }
+
