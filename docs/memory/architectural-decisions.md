@@ -136,6 +136,20 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - **Ẩn/Hiện (`CategoryService::updateVisibility` - MNU-11):** Cập nhật `hien_thi` theo giá trị `isVisible` hoặc đảo ngược trạng thái toggle. Khi danh mục bị ẩn, API khách hàng (`/customer/categories`) tự động loại bỏ danh mục này.
   - **Xóa mềm (`CategoryService::deleteCategory` - MNU-12):** Tuyệt đối không gọi `$category->delete()` vật lý để tránh vi phạm khóa ngoại trong bảng `MON_AN`. Thay vào đó, cập nhật `da_xoa = true, hien_thi = false`, đồng thời tự động ẩn (`hien_thi = false`) các món ăn thuộc danh mục đó.
 
+## ADR-012: Triển khai Quản lý Món ăn dành cho Admin (MNU-13 đến MNU-17)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai các API quản lý món ăn thuộc Phân hệ Quản trị viên (Phần B.2): Xem danh sách/chi tiết (`GET /dishes`, `GET /dishes/{dishId}`), Thêm món mới (`MNU-13`), Chỉnh sửa món (`MNU-14`), Bật/Tắt còn bán (`MNU-15`), Ẩn/Hiện món (`MNU-16`) và Xóa mềm món (`MNU-17`).
+- **Quyết định:**
+  - **Phân quyền & Bảo mật:** Toàn bộ route `/api/v1/admin/dishes/*` được nhóm và bảo vệ bởi middleware `auth:sanctum`, `account.active`, `role:ADMIN` (trả về HTTP 403 Forbidden nếu không phải Admin).
+  - **Khắc phục lỗi Double JSON Serialization trên Model `Dish`:** Loại bỏ `json_encode` thủ công trong các Mutator `ingredients`, `allergens`, `weatherTags` do Eloquent model đã khai báo `$casts` mảng (`'ingredients' => 'array'`), tránh việc bị mã hóa JSON 2 lần thành chuỗi escaped trong MySQL.
+  - **Định dạng dữ liệu (`AdminDishResource`):** Trả về đầy đủ thuộc tính quản trị dạng camelCase: `{ dishId, dishName, price, description, imageUrl, categoryId, categoryName, ingredients, allergens, weatherTags, isAvailable, isVisible, isDeleted }`.
+  - **Thêm món mới (`MNU-13`):** Validate dữ liệu qua `CreateDishRequest`, tùy biến thông báo lỗi `"The selected category id does not exist in DANH_MUC."` khi `categoryId` không hợp lệ (HTTP 422). Mặc định khởi tạo `isAvailable = true`, `isVisible = true`, `da_xoa = false`, trả về HTTP 201 Created.
+  - **Chỉnh sửa món (`MNU-14`):** Cập nhật linh hoạt các trường tên, giá, mô tả, ảnh, danh mục, nguyên liệu, dị ứng, thời tiết qua `UpdateDishRequest`, trả về HTTP 200 OK.
+  - **Bật/Tắt còn bán (`MNU-15`):** Cho phép truyền `isAvailable` (boolean) hoặc toggle tự động, cập nhật cột `con_ban`, trả về HTTP 200 OK.
+  - **Ẩn/Hiện món ăn (`MNU-16`):** Cho phép truyền `isVisible` (boolean) hoặc toggle tự động, cập nhật cột `hien_thi`. Khi món bị ẩn, API phía khách hàng lập tức không nhìn thấy món này (HTTP 404).
+  - **Xóa mềm món ăn (`MNU-17`):** Nghiêm cấm dùng `$dish->delete()` xóa vật lý. Thay vào đó đánh dấu `da_xoa = true, hien_thi = false, con_ban = false` để đảm bảo toàn vẹn dữ liệu cho các bảng có khóa ngoại trỏ tới như `CHI_TIET_DON_HANG` và `MON_AN_GIO_HANG`. Sau khi xóa mềm, các truy vấn quản trị thông thường và phía khách hàng đều trả về HTTP 404.
+
+
 
 
 

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
@@ -62,6 +63,17 @@ Route::prefix('v1')->group(function () {
             Route::put('/{categoryId}', [AdminCategoryController::class, 'update'])->whereNumber('categoryId');
             Route::patch('/{categoryId}/visibility', [AdminCategoryController::class, 'updateVisibility'])->whereNumber('categoryId');
             Route::delete('/{categoryId}', [AdminCategoryController::class, 'destroy'])->whereNumber('categoryId');
+        });
+
+        // B.2. Quản lý Món ăn (MNU-13 -> MNU-17)
+        Route::prefix('dishes')->group(function () {
+            Route::get('/', [AdminDishController::class, 'index']);
+            Route::get('/{dishId}', [AdminDishController::class, 'show'])->whereNumber('dishId');
+            Route::post('/', [AdminDishController::class, 'store']);
+            Route::put('/{dishId}', [AdminDishController::class, 'update'])->whereNumber('dishId');
+            Route::patch('/{dishId}/availability', [AdminDishController::class, 'updateAvailability'])->whereNumber('dishId');
+            Route::patch('/{dishId}/visibility', [AdminDishController::class, 'updateVisibility'])->whereNumber('dishId');
+            Route::delete('/{dishId}', [AdminDishController::class, 'destroy'])->whereNumber('dishId');
         });
     });
 

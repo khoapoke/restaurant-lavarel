@@ -88,7 +88,7 @@ class Dish extends Model
     {
         return Attribute::make(
             get: fn () => $this->nguyen_lieu ?? [],
-            set: fn ($value) => ['nguyen_lieu' => is_array($value) ? json_encode($value) : $value]
+            set: fn ($value) => ['nguyen_lieu' => $value]
         );
     }
 
@@ -96,7 +96,7 @@ class Dish extends Model
     {
         return Attribute::make(
             get: fn () => $this->chat_di_ung ?? [],
-            set: fn ($value) => ['chat_di_ung' => is_array($value) ? json_encode($value) : $value]
+            set: fn ($value) => ['chat_di_ung' => $value]
         );
     }
 
@@ -104,7 +104,7 @@ class Dish extends Model
     {
         return Attribute::make(
             get: fn () => $this->the_thoi_tiet ?? [],
-            set: fn ($value) => ['the_thoi_tiet' => is_array($value) ? json_encode($value) : $value]
+            set: fn ($value) => ['the_thoi_tiet' => $value]
         );
     }
 
