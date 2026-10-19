@@ -76,4 +76,21 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - Tầng nghiệp vụ `ProfileService::updateProfile()`: Bọc trong `DB::transaction()` cập nhật song song bảng `TAI_KHOAN` và `NGUOI_DUNG`.
   - Eloquent Model `UserProfile`: Đồng bộ cơ chế serialization mảng JSON `di_ung`, `che_do_an`, `so_dia_chi` qua `$casts = ['array']` để tránh xung đột double-encode.
 
+## ADR-008: Triển khai Quản lý Người dùng dành cho Admin (USR-07 đến USR-10)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai các API phân hệ Quản trị viên (Phần B.1) bao gồm xem danh sách, tìm kiếm & phân trang tài khoản (`USR-07`, `USR-08`), khóa tài khoản kèm thu hồi phiên (`USR-09`) và mở khóa tài khoản (`USR-10`).
+- **Quyết định:**
+  - **Bảo mật & Phân quyền:** Route group `/api/v1/admin` được bảo vệ bởi middleware `auth:sanctum`, `account.active`, và `role:ADMIN` (chặn toàn bộ người dùng role khác bằng HTTP 403 Forbidden).
+  - **Định dạng dữ liệu (`AdminAccountResource`):** Chuẩn hóa output JSON envelope chứa `accountId`, `username`, `email`, `status` ("ACTIVE" / "LOCKED"), `roleName`, `fullName`, `phoneNumber`. Mật khẩu được ẩn hoàn toàn theo `$hidden = ['mat_khau']`.
+  - **Tìm kiếm & Phân trang (`AccountService::getAccounts`):**
+    - Hỗ trợ tham số `keyword`: Tìm kiếm mờ đồng thời trên `ten_dang_nhap`, `email` và quan hệ `userProfile` (`ho_ten`, `so_dien_thoai`).
+    - Lọc theo `status` ("ACTIVE" / "LOCKED") và `roleId`.
+    - Phân trang với `items` và `pagination: { currentPage, perPage, totalItems, totalPages }`.
+  - **Khóa tài khoản (`AccountService::lockAccount` - USR-09):**
+    - Áp dụng **Rule AUTH-LOCK**: Kiểm tra nếu `$currentAdmin->ma_tai_khoan === $accountId` thì ném `HttpException(400, 'Admin cannot lock their own account')`.
+    - Cập nhật trạng thái `AccountStatus::LOCKED`.
+    - Gọi `$targetAccount->tokens()->delete()` xóa sạch token trong `personal_access_tokens` để cưỡng chế đăng xuất người dùng khỏi mọi phiên làm việc.
+  - **Mở khóa tài khoản (`AccountService::unlockAccount` - USR-10):**
+    - Cập nhật trạng thái `AccountStatus::ACTIVE`.
+
 
