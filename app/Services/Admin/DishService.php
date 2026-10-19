@@ -117,7 +117,7 @@ class DishService
             $dish->ten_mon_an = trim($data['dishName']);
         }
         if (isset($data['price'])) {
-            $dish->gia_tien = (float) $data['price'];
+            $dish->gia_tien = $data['price'];
         }
         if (array_key_exists('description', $data)) {
             $dish->mo_ta = $data['description'];
