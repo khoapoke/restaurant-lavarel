@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
 use App\Http\Controllers\Api\Customer\OrderController;
+use App\Http\Controllers\Api\Customer\PaymentController;
 use App\Http\Controllers\Api\Customer\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -47,15 +48,25 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/items/{dishId}', [CartController::class, 'removeItem'])->whereNumber('dishId');
             });
 
-            // A.4. Checkout, Lịch sử Đơn hàng & Thanh toán QR (ORD-01 -> ORD-06)
+            // A.4. Checkout, Lịch sử Đơn hàng (ORD-01 -> ORD-06)
             Route::prefix('orders')->group(function () {
                 Route::get('/', [OrderController::class, 'index']);
                 Route::post('/checkout', [OrderController::class, 'checkout']);
                 Route::get('/{orderId}', [OrderController::class, 'show'])->whereNumber('orderId');
                 Route::post('/{orderId}/cancel', [OrderController::class, 'cancel'])->whereNumber('orderId');
             });
+
+            // A.4. Thanh toán QR (PAY-01 -> PAY-03)
+            Route::prefix('payments')->group(function () {
+                Route::post('/{orderId}/qr', [PaymentController::class, 'generateQr'])->whereNumber('orderId');
+                Route::get('/{orderId}/status', [PaymentController::class, 'getStatus'])->whereNumber('orderId');
+                Route::post('/{orderId}/retry', [PaymentController::class, 'retry'])->whereNumber('orderId');
+            });
         });
     });
+
+    // Webhooks nhận kết quả từ Cổng thanh toán (VietQR/SePay/PayOS)
+    Route::post('/webhooks/payment-callback', [PaymentController::class, 'handleCallback']);
 
     // PHẦN B: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
     Route::prefix('admin')->middleware(['auth:sanctum', 'account.active', 'role:ADMIN'])->group(function () {

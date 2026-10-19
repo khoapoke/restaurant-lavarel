@@ -174,6 +174,24 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Nếu đơn đã được xác nhận, đang nấu, sẵn sàng hoặc đã giao (`CONFIRMED`, `PREPARING`, `READY`, `COMPLETED`, hoặc đã `CANCELLED`), hệ thống chặn và trả về HTTP 409 Conflict với thông điệp: `"Order cannot be cancelled because it is already being prepared by the kitchen"`.
     - Khi hủy thành công: Cập nhật `trang_thai = OrderStatus::CANCELLED`, đồng thời lưu `cancelReason` vào cột `ly_do_hoan_tien` trong bảng `THANH_TOAN` nếu có. Trả về HTTP 200 OK kèm payload `{ orderId, status: "CANCELLED" }`.
 
+## ADR-015: Triển khai Thanh toán VietQR, Tra cứu Trạng thái, Thử lại & Webhook Callback (PAY-01 đến PAY-03)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai nhóm API Thanh toán QR thuộc Phân hệ Khách hàng (Phần A.4): Sinh mã VietQR (`PAY-01`), Tra cứu trạng thái thanh toán (`PAY-02`), Thử lại thanh toán (`PAY-03`), và Webhook tiếp nhận kết quả thanh toán từ Cổng (`POST /api/v1/webhooks/payment-callback`).
+- **Quyết định:**
+  - **Tích hợp chuẩn VietQR:** Cấu hình chuẩn định dạng ảnh VietQR (`https://img.vietqr.io/image/{bankBin}-{accountNo}-{template}.png?amount={amount}&addInfo={content}`). Nội dung chuyển khoản chuẩn hóa: `"DH{orderId} THANH TOAN"`.
+  - **Quy tắc Nghiệp vụ Sinh mã & Thử lại (`PAY-01`, `PAY-03`):**
+    - Kiểm tra quyền sở hữu đơn hàng (chống IDOR).
+    - Nếu đơn hàng đã hủy (`CANCELLED`), chặn thao tác với HTTP 400 `"Order has already been cancelled"`.
+    - Nếu đơn hàng đã thanh toán thành công (`PaymentStatus::PAID`), chặn và trả về HTTP 409 Conflict `"Order has already been paid"`.
+    - Thử lại thanh toán (`retry`): Reset trạng thái về `UNPAID`, cập nhật mã giao dịch mới và gia hạn thời gian thanh toán `expiresAt` thêm 15 phút.
+  - **Tra cứu Trạng thái (`PAY-02`):** Trả về trạng thái giao dịch (`UNPAID`, `PAID`, `FAILED`, `REFUNDED`), số tiền, mã giao dịch và cờ `isPaid` (boolean).
+  - **Xử lý Webhook Callback (`/api/v1/webhooks/payment-callback`):**
+    - Tự động nhận diện `orderId` từ trường dữ liệu hoặc trích xuất từ cú pháp nội dung chuyển khoản (`DH\d+`).
+    - Kiểm tra số tiền thực nhận so với số tiền cần thanh toán của đơn hàng.
+    - Cập nhật `THANH_TOAN.trang_thai = PaymentStatus::PAID`, lưu log callback `log_callback` và cập nhật `ma_giao_dich`.
+    - Tự động chuyển trạng thái đơn hàng `DON_HANG.trang_thai` sang `CONFIRMED` nếu đang ở `PENDING_CONFIRMATION`.
+
+
 
 
 
