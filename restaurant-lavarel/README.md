@@ -1,58 +1,186 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 🍽️ Hệ Thống Quản Lý Nhà Hàng & Đặt Món Trực Tuyến (Pure RESTful API)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+> **Backend Service:** Laravel 11 pure RESTful API phục vụ các nền tảng Frontend (React, Next.js, Mobile App, v.v.).  
+> **Kiến trúc:** Service - Controller - FormRequest - API Resource với chuẩn hóa JSON Envelope và Global Exception Shielding.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 📌 1. Giới thiệu Tổng quan (Overview)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Dự án này là phân hệ **Backend Pure RESTful API** thuộc Hệ thống Quản lý Nhà hàng & Đặt món ăn. Toàn bộ logic nghiệp vụ được thiết kế tuân thủ theo mô hình L3 chuyên sâu, tách biệt hoàn toàn tầng giao diện (không render Blade views/Web routes).
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### Đặc điểm nổi bật:
+- **Chuẩn hóa phản hồi (Unified JSON Envelope):** Mọi response API đều được đóng gói theo khuôn mẫu:
+  - Thành công: `{"success": true, "code": 200, "message": "...", "data": {...}}`
+  - Thất bại: `{"success": false, "code": 4xx/5xx, "message": "...", "errors": {...}}`
+- **Xác thực & Phân quyền (Authentication & RBAC):** 
+  - Sử dụng **Laravel Sanctum** cấp Bearer Token có thời hạn và tự động thu hồi khi đăng xuất hoặc bị Admin khóa tài khoản.
+  - Phân quyền theo 3 vai trò chính: `ADMIN` (Quản trị viên), `STAFF` (Nhân viên), `CUSTOMER` (Khách hàng).
+- **Lá chắn ngoại lệ toàn cục (Global Exception Shielding):**
+  - Tự động ép header `Accept: application/json` thông qua middleware `ForceJsonResponse`.
+  - Triệt tiêu hành vi redirect về web login của Laravel khi không truyền token (trả về HTTP 401 JSON sạch).
+  - Bắt toàn bộ lỗi (Validation 422, Unauthenticated 401, Forbidden 403, ModelNotFound 404, Server Error 500) mà không làm lộ file path hay stack trace nhạy cảm.
+- **Tự động nâng cấp mật khẩu (Auto-Upgrade BCrypt):**
+  - Cho phép tài khoản khởi tạo bằng mật khẩu mẫu (như `'123'`) tự động chuyển đổi thành băm BCrypt an toàn ngay trong lần đăng nhập đầu tiên.
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## 🛠️ 2. Công nghệ Sử dụng (Tech Stack)
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- **Framework:** Laravel 11.x
+- **Ngôn ngữ:** PHP 8.2+ / PHP 8.3 (hỗ trợ String-Backed Enums, Constructor Promotion, Attributes)
+- **Hệ quản trị CSDL:** MySQL 8.0+ / 8.4+ 
+- **Xác thực:** Laravel Sanctum (Token-based Authentication)
+- **ORM:** Eloquent ORM (tắt `$timestamps = false`, cast mảng JSON `allergens`, `dietaryPreferences`, `savedAddresses`)
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+---
 
-## Agentic Development
+## 📂 3. Cấu trúc Thư mục Nòng cốt
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```text
+restaurant-lavarel/
+├── app/
+│   ├── Enums/                     # Backed Enums (RoleType, AccountStatus, OrderStatus...)
+│   ├── Http/
+│   │   ├── Controllers/Api/       # Controllers chuyên biệt thuần API
+│   │   │   ├── AuthController.php # USR-01, USR-02, USR-03 (Login/Register/Logout)
+│   │   │   ├── Admin/             # Phân hệ Quản trị viên (Account, Dish, Order...)
+│   │   │   └── Customer/          # Phân hệ Khách hàng (Profile, Cart, Order...)
+│   │   ├── Middleware/            # ForceJsonResponse, CheckAccountActive, CheckRole
+│   │   ├── Requests/              # FormRequests xác thực dữ liệu đầu vào
+│   │   └── Resources/             # API Resources chuẩn hóa dữ liệu trả về
+│   ├── Models/                    # 12 Eloquent Models ánh xạ 12 bảng CSDL
+│   ├── Services/                  # Tầng xử lý nghiệp vụ (Business Logic L3, Transactions)
+│   └── Traits/
+│       └── ApiResponse.php        # Trait đóng gói JSON Envelope
+├── database/
+│   ├── migrations/                # Schema 12 bảng + Sanctum personal_access_tokens
+│   └── seeders/
+│       └── RestaurantSeeder.php   # Dữ liệu giả định đầy đủ (Tài khoản, Món ăn, Bàn...)
+├── docs/                          # TÀI LIỆU ĐẶC TẢ KỸ THUẬT & MEMORY HỆ THỐNG
+│   ├── laravel_restful_api_specifications.md
+│   ├── business_logic_and_validation_rules.md
+│   ├── restaurant_management_system_database_specification.md
+│   └── memory/                    # Nhật ký kiến trúc (ADR) & bài học kinh nghiệm
+└── routes/
+    └── api.php                    # Toàn bộ định tuyến API (prefix: /api/v1/)
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+---
 
-## Contributing
+## 🚀 4. Hướng dẫn Cài đặt & Khởi chạy cho Team (Setup Guide)
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### Bước 1: Yêu cầu môi trường
+Đảm bảo máy của thành viên đã cài đặt:
+- **PHP** >= 8.2 (Khuyến nghị dùng PHP 8.3 trong Laragon hoặc XAMPP).
+- **Composer** (bản 2.x).
+- **MySQL** (chạy trên port 3306).
 
-## Code of Conduct
+> [!TIP]
+> Nếu bạn dùng **Laragon trên Windows**, bạn có thể thêm đường dẫn PHP và Composer vào biến môi trường PATH hoặc chạy trực tiếp từ Terminal của Laragon:
+> ```powershell
+> $env:PATH = "C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64;C:\laragon\bin\composer;$env:PATH"
+> ```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+### Bước 2: Clone repository & Cài đặt dependencies
+Mở Terminal và clone source code:
+```bash
+git clone <URL_REPO_CUA_NHOM>
+cd restaurant-lavarel
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Cài đặt các gói thư viện qua Composer:
+```bash
+composer install
+```
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Bước 3: Cấu hình file môi trường `.env`
+Sao chép file `.env.example` thành `.env`:
+```bash
+cp .env.example .env
+```
+*(Trên Windows PowerShell nếu không có lệnh `cp`, bạn dùng `copy .env.example .env`)*.
+
+Mở file `.env` và kiểm tra cấu hình kết nối database:
+```dotenv
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=restaurant_laravel
+DB_USERNAME=root
+DB_PASSWORD=
+```
+*(Tạo database có tên `restaurant_laravel` trên phpMyAdmin/HeidiSQL nếu chưa có)*.
+
+---
+
+### Bước 4: Tạo Application Key
+Tạo key mã hóa cho ứng dụng:
+```bash
+php artisan key:generate
+```
+
+---
+
+### Bước 5: Chạy Migration & Seeder dữ liệu mẫu
+Khởi tạo cấu trúc 12 bảng và nạp sẵn dữ liệu kiểm thử (Tài khoản, Danh mục, Món ăn, Bàn ăn, Đơn hàng, Đặt bàn):
+```bash
+php artisan migrate:fresh --seed
+```
+
+---
+
+### Bước 6: Khởi chạy Development Server
+Khởi động API server nội bộ:
+```bash
+php artisan serve
+```
+Mặc định ứng dụng sẽ chạy tại địa chỉ: `http://127.0.0.1:8000`
+
+---
+
+## 👥 5. Danh Sách Tài Khoản Mẫu Để Kiểm Thử (Seed Accounts)
+
+Hệ thống đã chuẩn bị sẵn các tài khoản với mọi vai trò. **Mật khẩu mặc định cho tất cả các tài khoản là `123`**:
+
+| STT | Username | Password | Vai trò | Email | Trạng thái | Mục đích kiểm thử |
+|:---:|:---|:---:|:---|:---|:---:|:---|
+| 1 | `admin` | `123` | **Quản trị viên** (Admin) | `admin@restaurant.com` | `ACTIVE` | Test API Quản trị (`/api/v1/admin/*`) |
+| 2 | `staff1` | `123` | **Nhân viên** (Staff) | `staff1@restaurant.com` | `ACTIVE` | Test API Bếp/Thu ngân/Đặt bàn |
+| 3 | `kh1` | `123` | **Khách hàng** (Customer) | `khachhang1@gmail.com` | `ACTIVE` | Test Hồ sơ, Giỏ hàng, Đặt món |
+| 4 | `kh2` | `123` | **Khách hàng** (Customer) | `khachhang2@gmail.com` | `ACTIVE` | Test Khách hàng 2 |
+| 5 | `kh_locked`| `123` | **Khách hàng** (Customer) | `locked@gmail.com` | `LOCKED` | Test chặn đăng nhập tài khoản bị khóa (403) |
+
+> [!NOTE]
+> Khi đăng nhập lần đầu với mật khẩu `123`, hệ thống sẽ tự động băm mật khẩu sang chuẩn **BCrypt** an toàn và lưu vào CSDL mà không làm gián đoạn người dùng.
+
+---
+
+## 📑 6. Danh Mục Tài Liệu Tham Khảo Trong Dự Án
+
+Mọi thành viên trong team khi phát triển chức năng mới **bắt buộc** đọc và tuân thủ các tài liệu đặc tả đặt trong thư mục `docs/`:
+
+1. **[Tài liệu Đặc tả RESTful API](docs/laravel_restful_api_specifications.md):**
+   - Danh sách chi tiết các API (Method, URL, Header, Request Body, Response JSON Envelope thành công/lỗi).
+2. **[Quy tắc Nghiệp vụ & Ràng buộc Dữ liệu](docs/business_logic_and_validation_rules.md):**
+   - Các thuật toán trọng tâm L3 (Giỏ hàng không dùng cột ID tự tăng, chuyển trạng thái đơn hàng FSM, tính tiền & khuyến mãi, quy tắc khóa tài khoản `AUTH-LOCK`...).
+3. **[Đặc tả Cơ sở Dữ liệu](docs/restaurant_management_system_database_specification.md):**
+   - Chi tiết 12 bảng, cấu trúc khóa chính phức hợp, quan hệ Foreign Key, kiểu dữ liệu JSON mở rộng.
+4. **[Nhật ký Quyết định Kiến trúc (ADR)](docs/memory/architectural-decisions.md):**
+   - Lưu trữ các quyết định kỹ thuật từ `ADR-001` đến `ADR-008` (Cấu trúc API, Middleware, Error Handling, Logic Khách hàng, Quản lý Admin...).
+5. **[Bài học Kinh nghiệm & Khắc phục Lỗi](docs/memory/lessons-learned.md):**
+   - Các lưu ý tránh lỗi khi code Laravel Eloquent trên bảng không có timestamps, xử lý token invalidation, v.v.
+
+---
+
+## ⚠️ 7. Quy Tắc Bắt Buộc Dành Cho Thành Viên Khi Code (Team Guidelines)
+
+1. **Pure RESTful API:** Tuyệt đối không can thiệp hay viết logic vào `resources/views`, `resources/css`, `resources/js`, `vite.config.js` hay `routes/web.php`.
+2. **Tuân thủ Chuẩn Envelope:** Toàn bộ Controller API phải sử dụng `ApiResponse` Trait (`$this->successResponse(...)`, `$this->errorResponse(...)`).
+3. **Xóa mềm (Soft Delete):** Tuyệt đối **không gọi lệnh `$dish->delete()` vật lý** trên bảng món ăn `MON_AN` vì sẽ vi phạm ràng buộc khóa ngoại với chi tiết đơn hàng cũ. Luôn cập nhật cờ xóa mềm (`isDeleted = true`, `isVisible = false`).
+4. **Bảo mật:** Model `Account` luôn bật thuộc tính `protected $hidden = ['mat_khau'];` để tránh rò rỉ mật khẩu trong JSON.
+5. **Quy tắc Khóa tài khoản (Rule AUTH-LOCK):** Admin không được tự khóa chính mình. Khi khóa một tài khoản, phải gọi `$account->tokens()->delete()` để thu hồi toàn bộ token phiên làm việc tức thì.
