@@ -149,6 +149,20 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - **Ẩn/Hiện món ăn (`MNU-16`):** Cho phép truyền `isVisible` (boolean) hoặc toggle tự động, cập nhật cột `hien_thi`. Khi món bị ẩn, API phía khách hàng lập tức không nhìn thấy món này (HTTP 404).
   - **Xóa mềm món ăn (`MNU-17`):** Nghiêm cấm dùng `$dish->delete()` xóa vật lý. Thay vào đó đánh dấu `da_xoa = true, hien_thi = false, con_ban = false` để đảm bảo toàn vẹn dữ liệu cho các bảng có khóa ngoại trỏ tới như `CHI_TIET_DON_HANG` và `MON_AN_GIO_HANG`. Sau khi xóa mềm, các truy vấn quản trị thông thường và phía khách hàng đều trả về HTTP 404.
 
+## ADR-013: Triển khai Tạo đơn hàng & Checkout (ORD-01 đến ORD-03)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai API Tạo đơn hàng Checkout thuộc Phân hệ Khách hàng (Phần A.4): `POST /api/v1/customer/orders/checkout` xử lý các hình thức nhận hàng Giao tận nơi (`ORD-01 - DELIVERY`), Đến lấy tại quán (`ORD-02 - PICKUP`), và Phương thức thanh toán (`ORD-03 - CASH hoặc BANK_TRANSFER_QR`).
+- **Quyết định:**
+  - **Bảo toàn Giao dịch Toàn vẹn (`DB::transaction`):** Toàn bộ quy trình checkout từ khóa giỏ hàng (`lockForUpdate`), kiểm tra tình trạng món, snapshot đơn giá, tạo đơn hàng `DON_HANG`, chèn `CHI_TIET_DON_HANG`, khởi tạo `THANH_TOAN` và làm rỗng `MON_AN_GIO_HANG` được thực hiện nguyên khối trong một database transaction duy nhất.
+  - **Khóa & Kiểm tra Giỏ hàng:** Khóa giỏ hàng bằng `lockForUpdate()` nhằm chống race condition (double-click checkout). Báo lỗi HTTP 400 `"Cannot checkout an empty cart"` nếu giỏ trống.
+  - **Bảo vệ Món ăn Còn bán & Snapshot Đơn giá:** Kiểm tra trạng thái từng món trong giỏ (`isAvailable`, `isVisible`, `!isDeleted`). Nếu món bị tắt bán hoặc hết hàng trước lúc bấm đặt, hủy giao dịch và trả về HTTP 400 `"Dish '{dishName}' has just sold out"`. Đơn giá được chốt cứng (`snapshot`) tại thời điểm đặt hàng lưu vào cột `don_gia` của `CHI_TIET_DON_HANG`.
+  - **Chuẩn hóa Chuỗi Địa chỉ (`dia_chi_giao_hang`):**
+    - `DELIVERY`: `"[DELIVERY] {recipientName} - {recipientPhone} | {shippingAddress}"` kèm ghi chú `| Note: {orderNote}` nếu có.
+    - `PICKUP`: `"[PICKUP] Nhận tại nhà hàng - KH: {recipientName} - SĐT: {recipientPhone}"` kèm ghi chú `| Note: {orderNote}` nếu có.
+  - **Khởi tạo Thanh toán (`THANH_TOAN`):** Tạo bản ghi thanh toán 1-1 với đơn hàng với `so_tien = tong_tien`, `trang_thai = PaymentStatus::UNPAID`, `phuong_thuc = PaymentMethod::CASH` hoặc `PaymentMethod::BANK_TRANSFER_QR`.
+  - **Định dạng dữ liệu (`OrderResource`):** Trả về đầy đủ thông tin chuẩn hóa theo API specifications: `orderId`, `orderDate`, `status` (`OrderStatus::PENDING_CONFIRMATION` -> `"PENDING_CONFIRMATION"`), `totalAmount`, `shippingAddress`, `payment` (`OrderPaymentResource`), `items` (`OrderItemResource`).
+
+
 
 
 

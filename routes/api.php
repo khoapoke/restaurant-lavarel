@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
+use App\Http\Controllers\Api\Customer\OrderController;
 use App\Http\Controllers\Api\Customer\ProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +45,11 @@ Route::prefix('v1')->group(function () {
                 Route::post('/items', [CartController::class, 'addItem']);
                 Route::put('/items/{dishId}', [CartController::class, 'updateQuantity'])->whereNumber('dishId');
                 Route::delete('/items/{dishId}', [CartController::class, 'removeItem'])->whereNumber('dishId');
+            });
+
+            // A.4. Checkout, Lịch sử Đơn hàng & Thanh toán QR (ORD-01 -> ORD-03)
+            Route::prefix('orders')->group(function () {
+                Route::post('/checkout', [OrderController::class, 'checkout']);
             });
         });
     });
