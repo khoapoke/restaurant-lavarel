@@ -136,8 +136,8 @@ class AuthService
      * @param Account $account
      * @return void
      */
-    public function logout(Account $account): void
+    public function logout(?Account $account): void
     {
-        $account->currentAccessToken()?->delete();
+        $account?->currentAccessToken()?->delete();
     }
 }
