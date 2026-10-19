@@ -21,5 +21,14 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - Thiết lập database `restaurant_laravel` trên MySQL (Laragon, port 3306, user `root`, charset `utf8mb4_unicode_ci`).
   - Viết migration `2026_10_19_060000_create_restaurant_system_tables.php` tạo đủ 12 bảng theo đúng chuẩn schema kèm khóa ngoại, khóa chính phức hợp (`MON_AN_GIO_HANG`, `CHI_TIET_DON_HANG`), cột JSON mở rộng (`allergens`, `dietaryPreferences`, `weatherTags`...).
   - Xuất migration `personal_access_tokens` cho Laravel Sanctum.
-  - Viết `RestaurantSeeder` nạp dữ liệu mẫu sinh động: 3 Roles, 5 Profiles & Accounts (gồm admin, staff, customer `kh1` có dị ứng và pass `'123'`, customer `kh2`, và tài khoản bị khóa `kh_locked`), 6 Bàn ăn (đầy đủ các trạng thái), 4 Danh mục, 12 Món ăn (đầy đủ tag thời tiết và dị ứng), giỏ hàng mẫu, đơn hàng mẫu, thanh toán và đặt bàn.
+
+## ADR-003: Triển khai API Đăng ký Tài khoản Khách hàng (USR-01)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai endpoint `POST /api/v1/auth/register` tuân thủ đúng định dạng JSON envelopes và luồng giao dịch nghiệp vụ.
+- **Quyết định:**
+  - `ApiResponse` Trait: Chuẩn hóa envelope `{"success", "code", "message", "data"}` hoặc `{"success", "code", "message", "errors"}`.
+  - `bootstrap/app.php`: Đăng ký render JSON cho `ValidationException` (HTTP 422) và `AuthenticationException` (HTTP 401) khi request đến `api/*`.
+  - `RegisterRequest`: Validate `username` (unique), `email` (unique), `phoneNumber` (regex SĐT VN), `passwordConfirmation` (same).
+  - `AuthService::register()`: Thực thi bên trong `DB::transaction()` tuần tự: tạo `UserProfile` (`NGUOI_DUNG`) -> gán role `CUSTOMER` -> tạo `Account` (`TAI_KHOAN`, mã hóa BCrypt) -> tạo `Cart` (`GIO_HANG`) 1-1 -> cấp Sanctum Token `createToken()`.
+  - `AccountResource` & `UserProfileResource`: Chuẩn hóa dữ liệu trả về theo đúng mẫu đặc tả trong tài liệu.
 

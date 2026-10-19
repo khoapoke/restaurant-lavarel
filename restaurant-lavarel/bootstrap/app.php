@@ -19,4 +19,26 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(function (\Illuminate\Validation\ValidationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 422,
+                    'message' => $e->getMessage(),
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 401,
+                    'message' => 'Unauthenticated or invalid token',
+                    'errors' => null,
+                ], 401);
+            }
+        });
     })->create();
