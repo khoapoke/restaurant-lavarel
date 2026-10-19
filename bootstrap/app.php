@@ -42,10 +42,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // Handle 422: Form Validation Errors
         $exceptions->render(function (ValidationException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                $customMessage = null;
+                if ($e->response instanceof \Illuminate\Http\JsonResponse) {
+                    $resData = $e->response->getData(true);
+                    if (!empty($resData['message'])) {
+                        $customMessage = $resData['message'];
+                    }
+                }
+
                 return response()->json([
                     'success' => false,
                     'code' => 422,
-                    'message' => $e->getMessage(),
+                    'message' => $customMessage ?? $e->getMessage(),
                     'errors' => $e->errors(),
                 ], 422);
             }

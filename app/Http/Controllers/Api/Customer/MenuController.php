@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\WeatherRecommendationRequest;
 use App\Http\Resources\Customer\CategoryResource;
+use App\Http\Resources\Customer\DishDetailResource;
 use App\Http\Resources\Customer\DishResource;
 use App\Services\Customer\MenuService;
 use App\Traits\ApiResponse;
@@ -56,5 +58,48 @@ class MenuController extends Controller
                 'lastPage' => $dishes->lastPage(),
             ],
         ], 'Dishes retrieved successfully', 200);
+    }
+
+    /**
+     * Get dish detail by ID (MNU-07).
+     *
+     * @param int $dishId
+     * @return JsonResponse
+     */
+    public function dishDetail(int $dishId): JsonResponse
+    {
+        $dish = $this->menuService->getDishDetail($dishId);
+
+        return $this->successResponse(
+            new DishDetailResource($dish),
+            'Dish detail fetched successfully',
+            200
+        );
+    }
+
+    /**
+     * Get weather-based recommendations (MNU-04).
+     *
+     * @param WeatherRecommendationRequest $request
+     * @return JsonResponse
+     */
+    public function weatherRecommendations(WeatherRecommendationRequest $request): JsonResponse
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+        if ($user && !$user->relationLoaded('userProfile')) {
+            $user->load('userProfile');
+        }
+
+        $recommendations = $this->menuService->getWeatherRecommendations(
+            (float) $request->input('lat'),
+            (float) $request->input('lon'),
+            $user
+        );
+
+        return $this->successResponse(
+            $recommendations,
+            'Weather recommendations generated successfully',
+            200
+        );
     }
 }
