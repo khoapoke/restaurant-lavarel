@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\AccountController as AdminAccountController;
+use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
@@ -50,8 +51,18 @@ Route::prefix('v1')->group(function () {
     Route::prefix('admin')->middleware(['auth:sanctum', 'account.active', 'role:ADMIN'])->group(function () {
         // B.1. Quản lý Người dùng
         Route::get('/accounts', [AdminAccountController::class, 'index']);
-        Route::patch('/accounts/{accountId}/lock', [AdminAccountController::class, 'lock']);
-        Route::patch('/accounts/{accountId}/unlock', [AdminAccountController::class, 'unlock']);
+        Route::patch('/accounts/{accountId}/lock', [AdminAccountController::class, 'lock'])->whereNumber('accountId');
+        Route::patch('/accounts/{accountId}/unlock', [AdminAccountController::class, 'unlock'])->whereNumber('accountId');
+
+        // B.2. Quản lý Danh mục (MNU-09 -> MNU-12)
+        Route::prefix('categories')->group(function () {
+            Route::get('/', [AdminCategoryController::class, 'index']);
+            Route::get('/{categoryId}', [AdminCategoryController::class, 'show'])->whereNumber('categoryId');
+            Route::post('/', [AdminCategoryController::class, 'store']);
+            Route::put('/{categoryId}', [AdminCategoryController::class, 'update'])->whereNumber('categoryId');
+            Route::patch('/{categoryId}/visibility', [AdminCategoryController::class, 'updateVisibility'])->whereNumber('categoryId');
+            Route::delete('/{categoryId}', [AdminCategoryController::class, 'destroy'])->whereNumber('categoryId');
+        });
     });
 
     // Authenticated user test route

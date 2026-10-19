@@ -125,6 +125,18 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Tuyệt đối không khởi tạo `CartItem::where(...)->first()->save()` để tránh sinh câu lệnh `UPDATE ... WHERE id = null` do bảng `MON_AN_GIO_HANG` sử dụng khóa chính phức hợp `(ma_gio_hang, ma_mon_an)`.
     - Đồng nhất envelope trả về qua `CartResource` chứa `cartId`, `accountId`, `items`, `totalQuantity`, `estimatedTotalAmount`.
 
+## ADR-011: Triển khai Quản lý Danh mục dành cho Admin (MNU-09 đến MNU-12)
+- **Ngày quyết định:** 2026-10-19
+- **Bối cảnh:** Triển khai các API quản lý danh mục thuộc Phân hệ Quản trị viên (Phần B.2): Xem danh sách (`GET /categories`), Thêm mới (`MNU-09`), Sửa (`MNU-10`), Ẩn/Hiện (`MNU-11`) và Xóa mềm (`MNU-12`).
+- **Quyết định:**
+  - **Phân quyền & Bảo mật:** Toàn bộ route `/api/v1/admin/categories/*` được bảo vệ bởi middleware `auth:sanctum`, `account.active`, `role:ADMIN` (trả về HTTP 403 Forbidden đối với Khách hàng/Nhân viên).
+  - **Định dạng dữ liệu (`AdminCategoryResource`):** Trả về `{ categoryId, categoryName, description, displayOrder, isVisible, isDeleted, dishesCount }`.
+  - **Thêm mới (`CategoryService::createCategory` - MNU-09):** `CreateCategoryRequest` validate `categoryName` bắt buộc, khởi tạo `hien_thi = isVisible ?? true`, `da_xoa = false`, trả về HTTP 201 Created.
+  - **Chỉnh sửa (`CategoryService::updateCategory` - MNU-10):** Tìm bản ghi chưa xóa mềm (`da_xoa = false`), cập nhật các trường và trả về HTTP 200 OK (ném HTTP 404 nếu không tìm thấy).
+  - **Ẩn/Hiện (`CategoryService::updateVisibility` - MNU-11):** Cập nhật `hien_thi` theo giá trị `isVisible` hoặc đảo ngược trạng thái toggle. Khi danh mục bị ẩn, API khách hàng (`/customer/categories`) tự động loại bỏ danh mục này.
+  - **Xóa mềm (`CategoryService::deleteCategory` - MNU-12):** Tuyệt đối không gọi `$category->delete()` vật lý để tránh vi phạm khóa ngoại trong bảng `MON_AN`. Thay vào đó, cập nhật `da_xoa = true, hien_thi = false`, đồng thời tự động ẩn (`hien_thi = false`) các món ăn thuộc danh mục đó.
+
+
 
 
 
