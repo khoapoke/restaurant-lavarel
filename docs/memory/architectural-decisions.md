@@ -206,6 +206,29 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Nếu dưới 60 phút, hệ thống từ chối với `HTTP 409 Conflict: Cannot modify or cancel reservation less than 60 minutes before scheduled time`.
     - Bảo vệ IDOR: Chỉ chủ sở hữu lượt đặt (`ma_tai_khoan = $accountId`) mới được xem, sửa hoặc hủy.
 
+## ADR-017: Triển khai Quản lý Đơn hàng, Máy Trạng thái & Duyệt đơn Admin (ORD-07 đến ORD-12)
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** Triển khai các API Quản lý Đơn hàng thuộc Phân hệ Quản trị viên (Phần B.3): Xem danh sách đơn (`ORD-07`), Xem chi tiết đơn, Chuyển trạng thái đơn hàng tuần tự (`ORD-08` $\rightarrow$ `ORD-11`), và Admin hủy đơn hàng kèm lý do (`ORD-12`).
+- **Quyết định:**
+  - **Phân quyền & Kiểm soát truy cập:** Toàn bộ route `/api/v1/admin/orders/*` được bảo vệ bởi middleware `['auth:sanctum', 'account.active', 'role:ADMIN']`. Mọi truy cập từ Khách hàng (`ROLE:CUSTOMER`) hoặc tài khoản không có quyền đều bị từ chối với `HTTP 403 Forbidden`.
+  - **Định dạng dữ liệu chuẩn hóa (`AdminOrderResource` & `AdminPaymentResource`):**
+    - Trả về payload camelCase hoàn chỉnh: `{ orderId, orderDate, status, totalAmount, shippingAddress, accountId, customerName, customerPhone, payment, items }`.
+    - `payment` nhúng `AdminPaymentResource`: `{ paymentId, amount, paymentMethod, status, transactionCode, refundReason }`.
+  - **Danh sách & Bộ lọc (`ORD-07`):** Hỗ trợ lọc theo `status` (nhận diện cả enum key tiếng Anh như `PENDING_CONFIRMATION` lẫn tên tiếng Việt như `Chờ xác nhận`), tìm kiếm `search` theo `ma_don_hang`, `dia_chi_giao_hang`, `ten_dang_nhap`, `ho_ten`, `so_dien_thoai`, phân trang `perPage` và sắp xếp giảm dần theo mã đơn.
+  - **Kiểm soát Máy Trạng thái Đơn hàng (`OrderStatus::canTransitionTo`):**
+    - Luồng chuyển tiếp hợp lệ tuân thủ DAG đơn hướng: `PENDING_CONFIRMATION` $\rightarrow$ `CONFIRMED` $\rightarrow$ `PREPARING` $\rightarrow$ `READY` $\rightarrow$ `COMPLETED`.
+    - Các trạng thái chưa hoàn tất (`PENDING_CONFIRMATION`, `CONFIRMED`, `PREPARING`, `READY`) đều có thể rẽ nhánh sang `CANCELLED`.
+    - Hai trạng thái `COMPLETED` và `CANCELLED` là trạng thái kết thúc (terminal states), không thể chuyển sang bất kỳ trạng thái nào khác.
+    - Mọi nỗ lực chuyển tiếp vi phạm quy tắc (ví dụ `COMPLETED` $\rightarrow$ `PREPARING` hoặc hủy đơn đã `CANCELLED`) đều bị chặn và trả về `HTTP 400 Bad Request` với thông điệp chính xác: `"Invalid status transition from {previousStatus} to {currentStatus}"`.
+  - **Đồng bộ Thanh toán khi Hoàn thành Đơn hàng (`ORD-11`):**
+    - Khi Admin chuyển đơn sang `OrderStatus::COMPLETED` (`Đã giao`):
+      - Nếu phương thức thanh toán là `CASH` (`Tiền mặt`), hệ thống tự động cập nhật `payment.trang_thai = PaymentStatus::PAID` (`Đã thanh toán`).
+      - Nếu phương thức thanh toán là `BANK_TRANSFER_QR` (`Chuyển khoản`) mà `payment.trang_thai` vẫn là `UNPAID` (`Chưa thanh toán`), hệ thống chặn hoàn thành đơn và báo lỗi `HTTP 400 Bad Request: "Đơn hàng chuyển khoản QR chưa được xác nhận thanh toán thành công"`.
+  - **Admin Hủy đơn kèm lý do (`ORD-12`):**
+    - Endpoint `POST /api/v1/admin/orders/{orderId}/cancel` chấp nhận `cancelReason` (chuỗi tối đa 500 ký tự).
+    - Cập nhật `trang_thai = OrderStatus::CANCELLED`, đồng thời lưu vết lý do vào cột `ly_do_hoan_tien` trong bảng `THANH_TOAN`. Trả về `{ orderId, status: "CANCELLED" }`.
+
+
 
 
 

@@ -898,4 +898,4 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
   }
 }
 ```
-- **Ghi chú nghiệp vụ (Laravel):** Sử dụng Query Builder tổng hợp `DB::table('CHI_TIET_DON_HANG')->join('DON_HANG', ...)->selectRaw('SUM(so_luong) as totalSold, SUM(so_luong * don_gia) as revenue')->groupBy(...)` để đạt hiệu năng cao nhất trên SQL Server.
+- **Ghi chú nghiệp vụ (Laravel):** Sử dụng Query Builder tổng hợp `DB::table('CHI_TIET_DON_HANG')->join('DON_HANG', ...)->selectRaw('SUM(so_luong) as totalSold, SUM(so_luong * don_gia) as revenue')->groupBy(...)` để đạt hiệu năng cao nhất trên cơ sở dữ liệu.

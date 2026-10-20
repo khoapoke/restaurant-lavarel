@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
+use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
@@ -107,6 +108,14 @@ Route::prefix('v1')->group(function () {
             Route::patch('/{dishId}/availability', [AdminDishController::class, 'updateAvailability'])->whereNumber('dishId');
             Route::patch('/{dishId}/visibility', [AdminDishController::class, 'updateVisibility'])->whereNumber('dishId');
             Route::delete('/{dishId}', [AdminDishController::class, 'destroy'])->whereNumber('dishId');
+        });
+
+        // B.3. Quản lý Đơn hàng (ORD-07 -> ORD-12)
+        Route::prefix('orders')->group(function () {
+            Route::get('/', [AdminOrderController::class, 'index']);
+            Route::get('/{orderId}', [AdminOrderController::class, 'show'])->whereNumber('orderId');
+            Route::patch('/{orderId}/status', [AdminOrderController::class, 'updateStatus'])->whereNumber('orderId');
+            Route::post('/{orderId}/cancel', [AdminOrderController::class, 'cancel'])->whereNumber('orderId');
         });
     });
 
