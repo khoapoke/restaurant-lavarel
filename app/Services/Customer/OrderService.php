@@ -2,6 +2,8 @@
 
 namespace App\Services\Customer;
 
+use App\Enums\FulfillmentStatus;
+use App\Enums\FulfillmentType;
 use App\Enums\KitchenItemStatus;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
@@ -65,31 +67,31 @@ class OrderService
                 throw new HttpException(400, 'Cannot checkout an empty cart');
             }
 
-            // STEP 3: Chuẩn hóa chuỗi địa chỉ nhận hàng theo Hình thức nhận (ORD-01, ORD-02)
-            $fulfillmentType = $data['fulfillmentType'] ?? 'DELIVERY';
+            $fulfillmentType = FulfillmentType::from($data['fulfillmentType']);
             $recipientName = trim($data['recipientName'] ?? '');
             $recipientPhone = trim($data['recipientPhone'] ?? '');
             $orderNote = trim($data['orderNote'] ?? '');
-
-            if ($fulfillmentType === 'PICKUP') {
-                $shippingAddress = "[PICKUP] Nhận tại nhà hàng - KH: {$recipientName} - SĐT: {$recipientPhone}";
-            } else {
-                $address = trim($data['shippingAddress'] ?? '');
-                $shippingAddress = "[DELIVERY] {$recipientName} - {$recipientPhone} | {$address}";
-            }
-
-            if (! empty($orderNote)) {
-                $shippingAddress .= " | Note: {$orderNote}";
-            }
+            $shippingAddress = $fulfillmentType === FulfillmentType::DELIVERY
+                ? trim($data['shippingAddress'] ?? '')
+                : null;
+            $deliveryFee = 0.0;
+            $grandTotal = $totalAmount + $deliveryFee;
 
             // STEP 4: Tạo bản ghi DON_HANG
             $order = Order::create([
                 'ngay_dat_hang' => now(),
-                'tong_tien' => $totalAmount,
+                'tong_tien' => $grandTotal,
+                'phi_giao_hang' => $deliveryFee,
                 'trang_thai' => OrderStatus::PENDING_CONFIRMATION,
                 'dia_chi_giao_hang' => $shippingAddress,
+                'ten_nguoi_nhan' => $recipientName,
+                'so_dien_thoai_nhan' => $recipientPhone,
+                'thoi_gian_nhan_du_kien' => $data['scheduledAt'] ?? null,
                 'ma_tai_khoan' => $accountId,
                 'kenh' => OrderChannel::ONLINE,
+                'loai_phuc_vu' => $fulfillmentType,
+                'trang_thai_giao_nhan' => FulfillmentStatus::PENDING,
+                'ghi_chu' => $orderNote ?: null,
             ]);
 
             // STEP 5: Chèn toàn bộ chi tiết món vào CHI_TIET_DON_HANG qua hàm attach()
@@ -109,7 +111,7 @@ class OrderService
             }
 
             Payment::create([
-                'so_tien' => $totalAmount,
+                'so_tien' => $grandTotal,
                 'phuong_thuc' => $paymentMethod,
                 'trang_thai' => PaymentStatus::UNPAID,
                 'ma_don_hang' => $order->ma_don_hang,

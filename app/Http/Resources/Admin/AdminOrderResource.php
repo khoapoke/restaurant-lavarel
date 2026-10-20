@@ -1,0 +1,52 @@
+<?php
+
+namespace App\Http\Resources\Admin;
+
+use App\Enums\FulfillmentStatus;
+use App\Enums\FulfillmentType;
+use App\Enums\OrderChannel;
+use App\Enums\OrderStatus;
+use App\Http\Resources\Customer\OrderItemResource;
+use App\Http\Resources\Customer\OrderPaymentResource;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class AdminOrderResource extends JsonResource
+{
+    /**
+     * Transform the resource into an array.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        $status = $this->trang_thai instanceof OrderStatus ? $this->trang_thai->name : (string) $this->trang_thai;
+        $channel = $this->kenh instanceof OrderChannel ? $this->kenh->name : (string) $this->kenh;
+        $fulfillmentType = $this->loai_phuc_vu instanceof FulfillmentType ? $this->loai_phuc_vu->name : (string) $this->loai_phuc_vu;
+        $fulfillmentStatus = $this->trang_thai_giao_nhan instanceof FulfillmentStatus ? $this->trang_thai_giao_nhan->name : (string) $this->trang_thai_giao_nhan;
+
+        return [
+            'orderId' => (int) $this->ma_don_hang,
+            'orderDate' => $this->ngay_dat_hang?->format('Y-m-d\TH:i:s'),
+            'status' => $status,
+            'channel' => $channel,
+            'fulfillmentType' => $fulfillmentType,
+            'fulfillmentStatus' => $fulfillmentStatus,
+            'totalAmount' => (float) $this->tong_tien,
+            'deliveryFee' => (float) $this->phi_giao_hang,
+            'recipientName' => $this->ten_nguoi_nhan,
+            'recipientPhone' => $this->so_dien_thoai_nhan,
+            'shippingAddress' => $this->dia_chi_giao_hang,
+            'scheduledAt' => $this->thoi_gian_nhan_du_kien?->format('Y-m-d\TH:i:s'),
+            'note' => $this->ghi_chu,
+            'customer' => $this->whenLoaded('account', fn (): array => [
+                'accountId' => (int) $this->account->ma_tai_khoan,
+                'username' => $this->account->ten_dang_nhap,
+                'fullName' => $this->account->userProfile?->ho_ten,
+                'phoneNumber' => $this->account->userProfile?->so_dien_thoai,
+            ]),
+            'payment' => $this->whenLoaded('payment', fn () => $this->payment ? new OrderPaymentResource($this->payment) : null),
+            'items' => $this->whenLoaded('dishes', fn () => OrderItemResource::collection($this->dishes)),
+        ];
+    }
+}

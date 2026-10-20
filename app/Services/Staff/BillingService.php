@@ -2,6 +2,7 @@
 
 namespace App\Services\Staff;
 
+use App\Enums\FulfillmentStatus;
 use App\Enums\InvoiceStatus;
 use App\Enums\KitchenItemStatus;
 use App\Enums\OrderStatus;
@@ -123,7 +124,10 @@ class BillingService
             OrderItem::where('ma_don_hang', $order->ma_don_hang)
                 ->where('trang_thai_bep', KitchenItemStatus::READY->value)
                 ->update(['trang_thai_bep' => KitchenItemStatus::SERVED->value]);
-            $order->update(['trang_thai' => OrderStatus::COMPLETED]);
+            $order->update([
+                'trang_thai' => OrderStatus::COMPLETED,
+                'trang_thai_giao_nhan' => FulfillmentStatus::SERVED,
+            ]);
             $lockedSession->update([
                 'trang_thai' => PosSessionStatus::CLOSED,
                 'dong_luc' => now(),

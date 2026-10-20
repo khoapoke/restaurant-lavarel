@@ -472,6 +472,7 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
   "recipientName": "Lê Hoàng Hùng",
   "recipientPhone": "0923456789",
   "shippingAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+  "scheduledAt": null,
   "paymentMethod": "BANK_TRANSFER_QR",
   "orderNote": "Gọi điện khi tới sảnh"
 }
@@ -486,8 +487,16 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
     "orderId": 4,
     "orderDate": "2026-06-10T10:15:00",
     "status": "PENDING_CONFIRMATION",
+    "fulfillmentType": "DELIVERY",
+    "fulfillmentStatus": "PENDING",
+    "itemsSubtotal": 650000.00,
+    "deliveryFee": 0.00,
     "totalAmount": 650000.00,
-    "shippingAddress": "[DELIVERY] Lê Hoàng Hùng - 0923456789 | 789 Cách Mạng Tháng 8, Quận 3, TP.HCM | Note: Gọi điện khi tới sảnh",
+    "recipientName": "Lê Hoàng Hùng",
+    "recipientPhone": "0923456789",
+    "shippingAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+    "scheduledAt": null,
+    "orderNote": "Gọi điện khi tới sảnh",
     "payment": {
       "paymentId": 4,
       "amount": 650000.00,
@@ -522,7 +531,7 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
   "errors": null
 }
 ```
-- **Ghi chú nghiệp vụ (Laravel):** Thực thi trong `DB::transaction()`. Ghi chi tiết món vào `CHI_TIET_DON_HANG` bằng `$order->dishes()->attach($pivotData)` (với `so_luong` và `don_gia`), tạo `Payment` (`THANH_TOAN`) và xóa sạch giỏ bằng `$cart->dishes()->detach()`.
+- **Ghi chú nghiệp vụ (Laravel):** Checkout online chỉ nhận `DELIVERY` hoặc `PICKUP`; `DINE_IN` do POS tạo khi khách đến bàn. Với `PICKUP`, không gửi `shippingAddress` và có thể gửi `scheduledAt` trong tương lai. Người nhận, số điện thoại, địa chỉ, lịch nhận, ghi chú và loại phục vụ được lưu ở các cột riêng, không ghép tiền tố vào địa chỉ. Toàn bộ checkout chạy trong `DB::transaction()`, snapshot giá món, tạo `Payment` và làm rỗng giỏ hàng.
 
 #### 2. Xem lịch sử, chi tiết đơn hàng & Yêu cầu hủy đơn (`ORD-04`, `ORD-05`, `ORD-06`)
 - **Method & URL:**
@@ -748,6 +757,7 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
 - **Method & URL:**
   - Danh sách đơn hàng (`ORD-07`): `GET /api/v1/admin/orders?status=PENDING_CONFIRMATION&page=1`
   - Chuyển trạng thái đơn (`ORD-08` $\rightarrow$ `ORD-11`): `PATCH /api/v1/admin/orders/{orderId}/status`
+  - Cập nhật trạng thái bàn giao: `PATCH /api/v1/admin/orders/{orderId}/fulfillment-status`
   - Hủy đơn kèm lý do (`ORD-12`): `POST /api/v1/admin/orders/{orderId}/cancel`
 - **Request Body (`PATCH /api/v1/admin/orders/{orderId}/status`):**
 ```json
@@ -777,7 +787,7 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
   "errors": null
 }
 ```
-- **Ghi chú nghiệp vụ (Laravel):** Kiểm tra tính hợp lệ của luồng trạng thái thông qua hàm `OrderStatus::canTransitionTo($newStatus)`.
+- **Ghi chú nghiệp vụ (Laravel):** `OrderStatus::canTransitionTo()` quản lý tiến độ bếp đến `READY`; không cho chuyển trực tiếp `READY → COMPLETED`. Khi `READY`, đơn giao hàng chuyển sang `AWAITING_DRIVER`, đơn tự lấy chuyển sang `AWAITING_CUSTOMER`. Endpoint `fulfillment-status` tiếp tục luồng `OUT_FOR_DELIVERY → DELIVERED` hoặc `COLLECTED`; trạng thái cuối tự hoàn tất đơn. `DINE_IN` do POS quản lý. Đơn QR phải `PAID` trước khi giao cho tài xế hoặc hoàn tất bàn giao.
 
 #### 2. Tra cứu giao dịch, Đối soát, Hoàn tiền & Xem log lỗi Callback (`PAY-04` $\rightarrow$ `PAY-07`)
 - **Method & URL:**

@@ -156,11 +156,9 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - **Bảo toàn Giao dịch Toàn vẹn (`DB::transaction`):** Toàn bộ quy trình checkout từ khóa giỏ hàng (`lockForUpdate`), kiểm tra tình trạng món, snapshot đơn giá, tạo đơn hàng `DON_HANG`, chèn `CHI_TIET_DON_HANG`, khởi tạo `THANH_TOAN` và làm rỗng `MON_AN_GIO_HANG` được thực hiện nguyên khối trong một database transaction duy nhất.
   - **Khóa & Kiểm tra Giỏ hàng:** Khóa giỏ hàng bằng `lockForUpdate()` nhằm chống race condition (double-click checkout). Báo lỗi HTTP 400 `"Cannot checkout an empty cart"` nếu giỏ trống.
   - **Bảo vệ Món ăn Còn bán & Snapshot Đơn giá:** Kiểm tra trạng thái từng món trong giỏ (`isAvailable`, `isVisible`, `!isDeleted`). Nếu món bị tắt bán hoặc hết hàng trước lúc bấm đặt, hủy giao dịch và trả về HTTP 400 `"Dish '{dishName}' has just sold out"`. Đơn giá được chốt cứng (`snapshot`) tại thời điểm đặt hàng lưu vào cột `don_gia` của `CHI_TIET_DON_HANG`.
-  - **Chuẩn hóa Chuỗi Địa chỉ (`dia_chi_giao_hang`):**
-    - `DELIVERY`: `"[DELIVERY] {recipientName} - {recipientPhone} | {shippingAddress}"` kèm ghi chú `| Note: {orderNote}` nếu có.
-    - `PICKUP`: `"[PICKUP] Nhận tại nhà hàng - KH: {recipientName} - SĐT: {recipientPhone}"` kèm ghi chú `| Note: {orderNote}` nếu có.
+  - **Dữ liệu nhận hàng có cấu trúc:** Theo ADR-018, `DELIVERY` lưu địa chỉ thuần; `PICKUP` để địa chỉ giao hàng rỗng và có thể lưu lịch hẹn lấy. Người nhận, điện thoại, ghi chú, loại phục vụ và trạng thái bàn giao được lưu ở các cột riêng.
   - **Khởi tạo Thanh toán (`THANH_TOAN`):** Tạo bản ghi thanh toán 1-1 với đơn hàng với `so_tien = tong_tien`, `trang_thai = PaymentStatus::UNPAID`, `phuong_thuc = PaymentMethod::CASH` hoặc `PaymentMethod::BANK_TRANSFER_QR`.
-  - **Định dạng dữ liệu (`OrderResource`):** Trả về đầy đủ thông tin chuẩn hóa theo API specifications: `orderId`, `orderDate`, `status` (`OrderStatus::PENDING_CONFIRMATION` -> `"PENDING_CONFIRMATION"`), `totalAmount`, `shippingAddress`, `payment` (`OrderPaymentResource`), `items` (`OrderItemResource`).
+  - **Định dạng dữ liệu (`OrderResource`):** Trả về đầy đủ thông tin chuẩn hóa theo API specifications, bao gồm trạng thái đơn, loại/trạng thái phục vụ, người nhận, địa chỉ hoặc lịch lấy, tổng món, phí giao hàng, tổng cộng, thanh toán và danh sách món.
 
 ## ADR-014: Triển khai Lịch sử Đơn hàng, Chi tiết & Hủy đơn Khách hàng (ORD-04 đến ORD-06)
 - **Ngày quyết định:** 2026-10-19
@@ -190,6 +188,35 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Kiểm tra số tiền thực nhận so với số tiền cần thanh toán của đơn hàng.
     - Cập nhật `THANH_TOAN.trang_thai = PaymentStatus::PAID`, lưu log callback `log_callback` và cập nhật `ma_giao_dich`.
     - Tự động chuyển trạng thái đơn hàng `DON_HANG.trang_thai` sang `CONFIRMED` nếu đang ở `PENDING_CONFIRMATION`.
+
+## ADR-016: Triển khai Đặt bàn trực tuyến cho Khách hàng
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** MVP cần cho khách chủ động tìm bàn, gửi yêu cầu đặt chỗ, xem lịch, chỉnh sửa và hủy đặt chỗ thay vì chỉ liên hệ thủ công với nhà hàng.
+- **Quyết định:**
+  - Các endpoint `/api/v1/customer/reservations/*` được bảo vệ bởi `auth:sanctum`, `account.active`, `role:CUSTOMER`; mọi truy vấn chi tiết đều giới hạn theo tài khoản hiện tại để chống IDOR.
+  - Việc tìm bàn dựa trên sức chứa, trạng thái bảo trì và khoảng thời gian xung đột `±119 phút`; khi tạo/cập nhật sử dụng transaction cùng `lockForUpdate()` để hạn chế hai khách nhận cùng một bàn.
+  - Yêu cầu thông thường phải gửi trước tối thiểu 30 phút; yêu cầu đặc biệt (sinh nhật, kỷ niệm, trang trí, bánh) phải gửi trước tối thiểu 120 phút. Khách chỉ được đổi hoặc hủy trước giờ đến ít nhất 60 phút.
+  - Vòng đời đặt chỗ được kiểm soát bởi `ReservationStatus::canTransitionTo()`; đặt chỗ mới bắt đầu ở `PENDING`, khách hủy chuyển sang `CANCELLED`, còn xác nhận/phục vụ/hoàn tất do nhân viên quản trị xử lý.
+
+## ADR-017: Triển khai Trung tâm Vận hành Admin cho MVP
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** Giao diện quản trị cũ chỉ là khung minh họa, chưa đủ để nhà hàng xử lý đơn, đặt chỗ, bàn, thanh toán và theo dõi hoạt động thực tế.
+- **Quyết định:**
+  - Toàn bộ API vận hành nằm trong `/api/v1/admin` và được bảo vệ bởi `auth:sanctum`, `account.active`, `role:ADMIN`.
+  - Đơn hàng tuân theo máy trạng thái tại `OrderStatus::canTransitionTo()`; hủy đơn yêu cầu lý do. Đơn tiền mặt được ghi nhận đã thanh toán khi hoàn tất, còn đơn QR chỉ hoàn tất sau khi thanh toán thành công.
+  - Hoàn tiền chỉ áp dụng cho giao dịch `PAID`; đối soát thanh toán cập nhật trạng thái theo dữ liệu giao dịch và lưu callback để truy vết.
+  - Cập nhật bàn bị chặn nếu làm sức chứa nhỏ hơn số khách đang phục vụ hoặc chuyển bàn đang có phiên POS sang bảo trì. Trạng thái bàn được đồng bộ với đặt chỗ và phiên phục vụ.
+  - Dashboard lấy dữ liệu thật từ đơn hàng, thanh toán, đặt chỗ, phiên POS và bàn; doanh thu chỉ tính các giao dịch `PAID`, không dùng số liệu mock ở frontend.
+
+## ADR-018: Tách loại phục vụ, tiến độ bếp và trạng thái bàn giao
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** Một trạng thái đơn hàng duy nhất không mô tả đúng ba nghiệp vụ giao tận nơi, khách tự đến lấy và ăn tại chỗ; cách ghép người nhận/điện thoại/ghi chú vào chuỗi địa chỉ cũng gây khó lọc và báo cáo.
+- **Quyết định:**
+  - Checkout online chỉ cho phép `DELIVERY` và `PICKUP`. `DINE_IN` được tạo từ phiên phục vụ POS khi khách đã đến nhà hàng; đặt bàn vẫn là nghiệp vụ riêng và không tự tạo đơn món.
+  - `DON_HANG` lưu riêng `loai_phuc_vu`, `trang_thai_giao_nhan`, người nhận, số điện thoại, địa chỉ, thời gian nhận dự kiến và phí giao hàng. Không tiếp tục dùng tiền tố `[DELIVERY]`/`[PICKUP]` trong `dia_chi_giao_hang`.
+  - `OrderStatus` quản lý tiến độ bếp đến `READY`; `FulfillmentStatus` quản lý bàn giao: giao hàng đi qua `AWAITING_DRIVER → OUT_FOR_DELIVERY → DELIVERED`, tự lấy đi qua `AWAITING_CUSTOMER → COLLECTED`, tại bàn đi qua `SERVING → SERVED`.
+  - `READY` tự khởi tạo trạng thái chờ bàn giao phù hợp. Chỉ trạng thái giao nhận cuối mới chuyển đơn sang `COMPLETED`; không cho chuyển trực tiếp `READY → COMPLETED`.
+  - Đơn QR phải thanh toán trước khi giao cho tài xế hoặc hoàn tất bàn giao. Đơn tiền mặt được ghi nhận thanh toán tại thời điểm `DELIVERED`/`COLLECTED`; POS tại bàn chốt qua luồng thanh toán phiên phục vụ.
 
 
 

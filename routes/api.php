@@ -3,12 +3,18 @@
 use App\Http\Controllers\Api\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
+use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Api\Admin\ReportController as AdminReportController;
+use App\Http\Controllers\Api\Admin\ReservationController as AdminReservationController;
+use App\Http\Controllers\Api\Admin\TableController as AdminTableController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
 use App\Http\Controllers\Api\Customer\OrderController;
 use App\Http\Controllers\Api\Customer\PaymentController;
 use App\Http\Controllers\Api\Customer\ProfileController;
+use App\Http\Controllers\Api\Customer\ReservationController as CustomerReservationController;
 use App\Http\Controllers\Api\Staff\BillingController;
 use App\Http\Controllers\Api\Staff\KitchenController;
 use App\Http\Controllers\Api\Staff\PosOrderController;
@@ -66,6 +72,13 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{orderId}/status', [PaymentController::class, 'getStatus'])->whereNumber('orderId');
                 Route::post('/{orderId}/retry', [PaymentController::class, 'retry'])->whereNumber('orderId');
             });
+
+            // A.5. Đặt bàn trực tuyến (BKG-01 -> BKG-04)
+            Route::get('/tables/available', [CustomerReservationController::class, 'availableTables']);
+            Route::get('/reservations', [CustomerReservationController::class, 'index']);
+            Route::post('/reservations', [CustomerReservationController::class, 'store']);
+            Route::put('/reservations/{reservationId}', [CustomerReservationController::class, 'update'])->whereNumber('reservationId');
+            Route::post('/reservations/{reservationId}/cancel', [CustomerReservationController::class, 'cancel'])->whereNumber('reservationId');
         });
     });
 
@@ -120,6 +133,25 @@ Route::prefix('v1')->group(function () {
             Route::patch('/{dishId}/visibility', [AdminDishController::class, 'updateVisibility'])->whereNumber('dishId');
             Route::delete('/{dishId}', [AdminDishController::class, 'destroy'])->whereNumber('dishId');
         });
+
+        // B.3. Điều phối đơn hàng và thanh toán
+        Route::get('/orders', [AdminOrderController::class, 'index']);
+        Route::get('/orders/{orderId}', [AdminOrderController::class, 'show'])->whereNumber('orderId');
+        Route::patch('/orders/{orderId}/status', [AdminOrderController::class, 'updateStatus'])->whereNumber('orderId');
+        Route::patch('/orders/{orderId}/fulfillment-status', [AdminOrderController::class, 'updateFulfillmentStatus'])->whereNumber('orderId');
+        Route::post('/orders/{orderId}/cancel', [AdminOrderController::class, 'cancel'])->whereNumber('orderId');
+        Route::get('/payments', [AdminPaymentController::class, 'index']);
+        Route::post('/payments/reconcile', [AdminPaymentController::class, 'reconcile']);
+        Route::get('/payments/callback-logs', [AdminPaymentController::class, 'callbackLogs']);
+        Route::post('/payments/{paymentId}/refund', [AdminPaymentController::class, 'refund'])->whereNumber('paymentId');
+
+        // B.4. Bàn ăn, đặt bàn và báo cáo
+        Route::get('/tables', [AdminTableController::class, 'index']);
+        Route::post('/tables', [AdminTableController::class, 'store']);
+        Route::put('/tables/{tableId}', [AdminTableController::class, 'update'])->whereNumber('tableId');
+        Route::get('/reservations', [AdminReservationController::class, 'index']);
+        Route::patch('/reservations/{reservationId}/status', [AdminReservationController::class, 'updateStatus'])->whereNumber('reservationId');
+        Route::get('/reports/dashboard', [AdminReportController::class, 'dashboard']);
     });
 
     // Authenticated user test route

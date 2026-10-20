@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Enums\AccountStatus;
+use App\Enums\FulfillmentStatus;
+use App\Enums\FulfillmentType;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
@@ -423,7 +425,11 @@ class RestaurantSeeder extends Seeder
             'ngay_dat_hang' => Carbon::now()->subDays(2),
             'tong_tien' => (79000 * 2) + 38000, // 196.000
             'trang_thai' => OrderStatus::COMPLETED,
-            'dia_chi_giao_hang' => '[DELIVERY] Lê Hoàng Hùng - 0923456789 | 789 Cách Mạng Tháng 8, Quận 10, TP.HCM',
+            'dia_chi_giao_hang' => '789 Cách Mạng Tháng 8, Quận 10, TP.HCM',
+            'ten_nguoi_nhan' => 'Lê Hoàng Hùng',
+            'so_dien_thoai_nhan' => '0923456789',
+            'loai_phuc_vu' => FulfillmentType::DELIVERY,
+            'trang_thai_giao_nhan' => FulfillmentStatus::DELIVERED,
             'ma_tai_khoan' => $accKh1->ma_tai_khoan,
         ]);
 
@@ -445,7 +451,12 @@ class RestaurantSeeder extends Seeder
             'ngay_dat_hang' => Carbon::now()->subMinutes(15),
             'tong_tien' => 65000,
             'trang_thai' => OrderStatus::PENDING_CONFIRMATION,
-            'dia_chi_giao_hang' => '[PICKUP] Nhận tại nhà hàng - KH: Phạm Thị Mai - SĐT: 0934567890',
+            'dia_chi_giao_hang' => null,
+            'ten_nguoi_nhan' => 'Phạm Thị Mai',
+            'so_dien_thoai_nhan' => '0934567890',
+            'thoi_gian_nhan_du_kien' => Carbon::now()->addMinutes(45),
+            'loai_phuc_vu' => FulfillmentType::PICKUP,
+            'trang_thai_giao_nhan' => FulfillmentStatus::PENDING,
             'ma_tai_khoan' => $accKh2->ma_tai_khoan,
         ]);
 

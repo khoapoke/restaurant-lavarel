@@ -9,4 +9,18 @@ enum ReservationStatus: string
     case REJECTED = 'Từ chối';
     case CANCELLED = 'Đã hủy';
     case COMPLETED = 'Hoàn thành';
+
+    public function canTransitionTo(self $target): bool
+    {
+        return match ($this) {
+            self::PENDING => in_array($target, [self::CONFIRMED, self::REJECTED, self::CANCELLED], true),
+            self::CONFIRMED => in_array($target, [self::COMPLETED, self::CANCELLED], true),
+            default => false,
+        };
+    }
+
+    public function isActive(): bool
+    {
+        return in_array($this, [self::PENDING, self::CONFIRMED], true);
+    }
 }

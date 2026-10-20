@@ -13,6 +13,8 @@ class PosOrderResource extends JsonResource
             'orderId' => (int) $this->ma_don_hang,
             'channel' => $this->kenh->name,
             'status' => $this->trang_thai->name,
+            'fulfillmentType' => $this->loai_phuc_vu->name,
+            'fulfillmentStatus' => $this->trang_thai_giao_nhan->name,
             'note' => $this->ghi_chu,
             'totalAmount' => (float) $this->tong_tien,
             'version' => (int) $this->phien_ban,

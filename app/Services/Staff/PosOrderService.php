@@ -2,6 +2,8 @@
 
 namespace App\Services\Staff;
 
+use App\Enums\FulfillmentStatus;
+use App\Enums\FulfillmentType;
 use App\Enums\KitchenItemStatus;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
@@ -36,11 +38,13 @@ class PosOrderService
                 'ngay_dat_hang' => now(),
                 'tong_tien' => 0,
                 'trang_thai' => OrderStatus::DRAFT,
-                'dia_chi_giao_hang' => '[DINE_IN] '.$lockedSession->tables()->pluck('ten_ban')->join(', '),
+                'dia_chi_giao_hang' => null,
                 'ghi_chu' => $data['note'] ?? null,
                 'ma_tai_khoan' => $staff->ma_tai_khoan,
                 'ma_phien' => $lockedSession->ma_phien,
                 'kenh' => OrderChannel::POS,
+                'loai_phuc_vu' => FulfillmentType::DINE_IN,
+                'trang_thai_giao_nhan' => FulfillmentStatus::SERVING,
                 'phien_ban' => 1,
             ]);
 

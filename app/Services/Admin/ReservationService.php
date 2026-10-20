@@ -1,0 +1,104 @@
+<?php
+
+namespace App\Services\Admin;
+
+use App\Enums\ReservationStatus;
+use App\Enums\TableStatus;
+use App\Models\Reservation;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+
+class ReservationService
+{
+    /** @param array<string, mixed> $filters */
+    public function getReservations(array $filters = []): LengthAwarePaginator
+    {
+        $query = Reservation::query()->with(['account.userProfile', 'diningTable']);
+
+        if (! empty($filters['status'])) {
+            $query->where('trang_thai', $this->statusFromName((string) $filters['status'])->value);
+        }
+
+        if (! empty($filters['date'])) {
+            $query->whereDate('thoi_gian', (string) $filters['date']);
+        }
+
+        if (! empty($filters['keyword'])) {
+            $keyword = trim((string) $filters['keyword']);
+            $query->where(function ($nested) use ($keyword): void {
+                $nested->whereHas('account', function ($accountQuery) use ($keyword): void {
+                    $accountQuery->where('ten_dang_nhap', 'like', "%{$keyword}%")
+                        ->orWhereHas('userProfile', fn ($profileQuery) => $profileQuery->where('ho_ten', 'like', "%{$keyword}%"));
+                })->orWhereHas('diningTable', fn ($tableQuery) => $tableQuery->where('ten_ban', 'like', "%{$keyword}%"));
+            });
+        }
+
+        return $query->orderBy('thoi_gian')
+            ->orderBy('ma_dat_ban')
+            ->paginate(min(max((int) ($filters['perPage'] ?? 15), 1), 50));
+    }
+
+    public function updateStatus(int $reservationId, string $targetStatus, ?string $adminNote = null): Reservation
+    {
+        return DB::transaction(function () use ($reservationId, $targetStatus, $adminNote): Reservation {
+            $reservation = Reservation::query()
+                ->with('diningTable')
+                ->lockForUpdate()
+                ->findOrFail($reservationId);
+            $target = $this->statusFromName($targetStatus);
+
+            if (! $reservation->trang_thai->canTransitionTo($target)) {
+                throw new HttpException(409, "Invalid reservation transition from {$reservation->trang_thai->name} to {$target->name}");
+            }
+
+            if ($target === ReservationStatus::CONFIRMED) {
+                if ($reservation->diningTable->trang_thai === TableStatus::MAINTENANCE) {
+                    throw new HttpException(409, 'The selected table is under maintenance');
+                }
+
+                $overlapExists = Reservation::query()
+                    ->where('ma_ban', $reservation->ma_ban)
+                    ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
+                    ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                    ->whereBetween('thoi_gian', [
+                        $reservation->thoi_gian->copy()->subMinutes(119),
+                        $reservation->thoi_gian->copy()->addMinutes(119),
+                    ])->exists();
+
+                if ($overlapExists) {
+                    throw new HttpException(409, 'This table has an overlapping confirmed reservation');
+                }
+
+                if ($reservation->thoi_gian->isToday()
+                    && $reservation->diningTable->trang_thai === TableStatus::AVAILABLE) {
+                    $reservation->diningTable->update(['trang_thai' => TableStatus::RESERVED]);
+                }
+            }
+
+            if ($adminNote) {
+                $reservation->ghi_chu = trim((string) $reservation->ghi_chu."\n[ADMIN] ".$adminNote);
+            }
+            $reservation->trang_thai = $target;
+            $reservation->save();
+
+            if (in_array($target, [ReservationStatus::COMPLETED, ReservationStatus::CANCELLED], true)
+                && $reservation->diningTable->trang_thai === TableStatus::RESERVED) {
+                $reservation->diningTable->update(['trang_thai' => TableStatus::AVAILABLE]);
+            }
+
+            return $reservation->fresh()->load(['account.userProfile', 'diningTable']);
+        });
+    }
+
+    private function statusFromName(string $input): ReservationStatus
+    {
+        foreach (ReservationStatus::cases() as $status) {
+            if ($status->name === $input || $status->value === $input) {
+                return $status;
+            }
+        }
+
+        throw new HttpException(422, 'Unknown reservation status');
+    }
+}

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\FulfillmentStatus;
+use App\Enums\FulfillmentType;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -22,11 +24,17 @@ class Order extends Model
     protected $fillable = [
         'ngay_dat_hang',
         'tong_tien',
+        'phi_giao_hang',
         'trang_thai',
         'dia_chi_giao_hang',
+        'ten_nguoi_nhan',
+        'so_dien_thoai_nhan',
+        'thoi_gian_nhan_du_kien',
         'ma_tai_khoan',
         'ma_phien',
         'kenh',
+        'loai_phuc_vu',
+        'trang_thai_giao_nhan',
         'ghi_chu',
         'phien_ban',
     ];
@@ -34,8 +42,12 @@ class Order extends Model
     protected $casts = [
         'ngay_dat_hang' => 'datetime',
         'tong_tien' => 'decimal:2',
+        'phi_giao_hang' => 'decimal:2',
         'trang_thai' => OrderStatus::class,
         'kenh' => OrderChannel::class,
+        'loai_phuc_vu' => FulfillmentType::class,
+        'trang_thai_giao_nhan' => FulfillmentStatus::class,
+        'thoi_gian_nhan_du_kien' => 'datetime',
         'phien_ban' => 'integer',
     ];
 

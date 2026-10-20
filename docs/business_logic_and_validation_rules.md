@@ -143,19 +143,32 @@ EXECUTE inside DB::transaction(function () use ($accountId, $checkoutPayload) {
             ];
         }
 
-    STEP 3: Chuẩn hóa chuỗi địa chỉ nhận hàng theo Hình thức nhận (ORD-01, ORD-02)
-        IF ($checkoutPayload['fulfillmentType'] === 'PICKUP') THEN
-            SET $shippingAddress = "[PICKUP] Nhận tại nhà hàng - KH: {$checkoutPayload['recipientName']} - SĐT: {$checkoutPayload['recipientPhone']}";
-        ELSE
-            SET $shippingAddress = "[DELIVERY] {$checkoutPayload['recipientName']} - {$checkoutPayload['recipientPhone']} | {$checkoutPayload['shippingAddress']}";
-        END IF
+    STEP 3: Chuẩn hóa dữ liệu nhận hàng theo Hình thức nhận (ORD-01, ORD-02)
+        SET $fulfillmentType = $checkoutPayload['fulfillmentType']; // DELIVERY hoặc PICKUP
+        SET $fulfillmentStatus = FulfillmentStatus::PENDING;
+        SET $recipientName = $checkoutPayload['recipientName'];
+        SET $recipientPhone = $checkoutPayload['recipientPhone'];
+        SET $shippingAddress = $fulfillmentType === 'DELIVERY'
+            ? $checkoutPayload['shippingAddress']
+            : NULL;
+        SET $scheduledAt = $fulfillmentType === 'PICKUP'
+            ? ($checkoutPayload['scheduledAt'] ?? NULL)
+            : NULL;
+        SET $deliveryFee = 0; // Chính sách MVP: chưa thu phí giao hàng
 
     STEP 4: Tạo bản ghi DON_HANG
         CREATE $order = Order::create([
             'ngay_dat_hang'     => now(),
             'tong_tien'         => $totalAmount,
             'trang_thai'        => OrderStatus::PENDING_CONFIRMATION, // N'Chờ xác nhận'
+            'loai_phuc_vu'      => $fulfillmentType,
+            'trang_thai_giao_nhan' => $fulfillmentStatus,
+            'ten_nguoi_nhan'    => $recipientName,
+            'so_dien_thoai_nhan'=> $recipientPhone,
             'dia_chi_giao_hang' => $shippingAddress,
+            'thoi_gian_nhan_du_kien' => $scheduledAt,
+            'phi_giao_hang'     => $deliveryFee,
+            'ghi_chu'           => $checkoutPayload['orderNote'] ?? NULL,
             'ma_tai_khoan'      => $accountId
         ]);
 
@@ -164,7 +177,7 @@ EXECUTE inside DB::transaction(function () use ($accountId, $checkoutPayload) {
 
     STEP 6: Khởi tạo bản ghi THANH_TOAN (1-1 với DON_HANG)
         CREATE Payment::create([
-            'so_tien'     => $totalAmount,
+            'so_tien'     => $totalAmount + $deliveryFee,
             'phuong_thuc' => $checkoutPayload['paymentMethod'], // N'Tiền mặt' hoặc N'Chuyển khoản'
             'trang_thai'  => PaymentStatus::UNPAID,             // N'Chưa thanh toán'
             'ma_don_hang' => $order->ma_don_hang
@@ -205,19 +218,28 @@ EXECUTE inside DB::transaction(function () use ($accountId, $checkoutPayload) {
 │        READY         │ ─────────────────── (Admin hủy khách không nhận) ─────┘
 │   (N'Sẵn sàng')      │
 └──────────┬───────────┘
-           │ (Đã giao hoàn tất & Đã thu tiền - ORD-11)
+           │ (FulfillmentStatus đạt DELIVERED/COLLECTED)
            ▼
 ┌──────────────────────┐
 │      COMPLETED       │
-│    (N'Đã giao')      │
+│    (Hoàn thành)      │
 └──────────────────────┘
 ```
+
+`DON_HANG.trang_thai` chỉ mô tả tiến độ xác nhận và chuẩn bị món. Sau `READY`, việc bàn giao được quản lý riêng bằng `DON_HANG.trang_thai_giao_nhan`:
+
+- `DELIVERY`: `PENDING → AWAITING_DRIVER → OUT_FOR_DELIVERY → DELIVERED`.
+- `PICKUP`: `PENDING → AWAITING_CUSTOMER → COLLECTED`.
+- `DINE_IN`: chỉ được tạo từ POS, `SERVING → SERVED`; không xuất hiện trong checkout online.
+- Khi bếp chuyển đơn sang `READY`, hệ thống tự đặt trạng thái giao nhận tương ứng (`AWAITING_DRIVER` hoặc `AWAITING_CUSTOMER`). `DELIVERED`/`COLLECTED` mới kết thúc đơn và chuyển `OrderStatus` sang `COMPLETED`.
+- Đơn QR phải `PAID` trước khi bàn giao cho tài xế hoặc hoàn tất nhận món. Đơn tiền mặt được ghi nhận `PAID` khi khách nhận hàng/món.
 
 - **Quy tắc Hủy đơn của Khách hàng (`ORD-06`):**
   - `IF ($order->trang_thai !== OrderStatus::PENDING_CONFIRMATION)` $\rightarrow$ Trả về lỗi `409 Conflict` ("Nhà hàng đã tiếp nhận hoặc đang chế biến đơn hàng của bạn, không thể tự hủy").
 - **Quy tắc Đồng bộ Thanh toán khi Hoàn thành Đơn hàng (`ORD-11`):**
-  - Khi Admin chuyển đơn hàng sang `OrderStatus::COMPLETED` (`N'Đã giao'`):
-    - Nếu phương thức thanh toán là `PaymentMethod::CASH` (`N'Tiền mặt'`), hệ thống tự động cập nhật `$order->payment->update(['trang_thai' => PaymentStatus::PAID])`.
+  - Admin không chuyển trực tiếp `READY → COMPLETED`; hệ thống tự hoàn tất sau khi cập nhật giao nhận thành `DELIVERED` hoặc `COLLECTED`.
+  - Nếu phương thức thanh toán là `PaymentMethod::CASH` (`N'Tiền mặt'`), hệ thống tự động cập nhật `$order->payment->update(['trang_thai' => PaymentStatus::PAID])` tại thời điểm bàn giao cuối.
+  - Nếu phương thức là `BANK_TRANSFER_QR`, giao dịch phải ở trạng thái `PAID` trước khi bàn giao cho tài xế hoặc kết thúc nhận món.
     - Nếu phương thức thanh toán là `PaymentMethod::BANK_TRANSFER_QR` (`N'Chuyển khoản'`) mà `THANH_TOAN.trang_thai` vẫn là `UNPAID`, hệ thống chặn chuyển `COMPLETED` và báo lỗi `400 Bad Request` ("Đơn hàng chuyển khoản QR chưa được xác nhận thanh toán thành công").
 
 ---

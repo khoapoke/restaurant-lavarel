@@ -2,7 +2,10 @@
 
 namespace App\Http\Requests\Customer;
 
+use App\Enums\FulfillmentType;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CheckoutOrderRequest extends FormRequest
 {
@@ -17,15 +20,19 @@ class CheckoutOrderRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
-            'fulfillmentType' => ['required', 'string', 'in:DELIVERY,PICKUP'],
+            'fulfillmentType' => [
+                'required',
+                Rule::in([FulfillmentType::DELIVERY->value, FulfillmentType::PICKUP->value]),
+            ],
             'recipientName' => ['required', 'string', 'max:100'],
             'recipientPhone' => ['required', 'string', 'regex:/^(0|\+84)[0-9]{9,10}$/'],
             'shippingAddress' => ['required_if:fulfillmentType,DELIVERY', 'nullable', 'string', 'max:255'],
+            'scheduledAt' => ['exclude_unless:fulfillmentType,PICKUP', 'nullable', 'date', 'after:now'],
             'paymentMethod' => ['required', 'string', 'in:CASH,BANK_TRANSFER_QR'],
             'orderNote' => ['nullable', 'string', 'max:255'],
         ];
@@ -45,6 +52,7 @@ class CheckoutOrderRequest extends FormRequest
             'recipientPhone.required' => 'Recipient phone is required.',
             'recipientPhone.regex' => 'The phone number format is invalid.',
             'shippingAddress.required_if' => 'Shipping address is required when fulfillment type is DELIVERY.',
+            'scheduledAt.after' => 'Scheduled pickup time must be in the future.',
             'paymentMethod.required' => 'Payment method is required.',
             'paymentMethod.in' => 'The selected payment method is invalid. It must be CASH or BANK_TRANSFER_QR.',
         ];
