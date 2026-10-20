@@ -271,6 +271,32 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - **Ghi chú Admin (`adminNote`):** Tự động nối và lưu vết ghi chú quản trị viên vào trường `ghi_chu`.
     - Payload phản hồi chuẩn hóa theo spec: `{ reservationId, status, tableId, tableStatus }`.
 
+## ADR-020: Triển khai Báo cáo Thống kê & Dashboard Quản trị (RPT-01 đến RPT-04)
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Triển khai các API Báo cáo & Dashboard tổng quan thuộc Phân hệ Quản trị viên (Phần B.4.2): Báo cáo Doanh thu (`RPT-01`), Báo cáo Đơn hàng (`RPT-02`), Món ăn bán chạy nhất (`RPT-03`), và Tình hình Đặt bàn (`RPT-04`).
+- **Quyết định:**
+  - **Phân quyền:** Toàn bộ route `/api/v1/admin/reports/*` được bảo vệ bởi middleware `['auth:sanctum', 'account.active', 'role:ADMIN']` (trả về HTTP 403 Forbidden nếu không phải Admin).
+  - **Xác thực Khoảng thời gian (`DashboardReportRequest`):**
+    - Nhận `fromDate` và `toDate` theo định dạng `Y-m-d`.
+    - Tự động gán mặc định nếu không truyền: `fromDate` là ngày đầu tháng hiện tại, `toDate` là ngày hiện tại.
+    - Kiểm tra logic: `toDate` phải lớn hơn hoặc bằng `fromDate` (`after_or_equal:fromDate`). Nếu không thỏa mãn, lập tức trả về `HTTP 422 Unprocessable Entity` với envelope:
+      `{ "success": false, "code": 422, "message": "Invalid date range", "errors": { "toDate": ["The to date must be a date after or equal to from date."] } }`.
+  - **Báo cáo Doanh thu (`RPT-01`):**
+    - Tính tổng doanh thu thực thu từ các giao dịch `THANH_TOAN.trang_thai = 'Đã thanh toán'` (`PaymentStatus::PAID`).
+    - Nhóm theo ngày `DATE(dh.ngay_dat_hang)` để trả về chuỗi `dailySeries: [{ date, amount }]`.
+  - **Báo cáo Đơn hàng (`RPT-02`):**
+    - Tổng hợp số lượng đơn hàng: tổng số đơn `totalCount`, đơn hoàn thành `completedCount` (`COMPLETED`), đơn hủy `cancelledCount` (`CANCELLED`), và tỷ lệ hoàn tất `completionRate = (completedCount / totalCount) * 100`.
+  - **Báo cáo Món bán chạy (`RPT-03`):**
+    - Sử dụng Query Builder tổng hợp hiệu năng cao trực tiếp trên database:
+      `DB::table('CHI_TIET_DON_HANG')->join('DON_HANG', ...)->selectRaw('SUM(so_luong) as totalSold, SUM(so_luong * don_gia) as revenue')->groupBy(...)`.
+    - Loại trừ các đơn hàng đã bị hủy (`CANCELLED`). Giới hạn `limit` (mặc định 5 món cao nhất).
+  - **Báo cáo Tình hình Đặt bàn (`RPT-04`):**
+    - Thống kê tổng số lượt đặt `totalBookings`, lượt đã duyệt `confirmedBookings` (`CONFIRMED` hoặc `COMPLETED`), và tỷ lệ lấp đầy bàn `occupancyRatePercent`.
+  - **Cung cấp cả Endpoint Tổng hợp & Đơn lẻ:**
+    - Cung cấp `GET /api/v1/admin/reports/dashboard` trả về trọn bộ 4 nhóm chỉ số phục vụ giao diện trang chủ Admin.
+    - Cung cấp các endpoint chi tiết: `/reports/revenue`, `/reports/orders`, `/reports/top-dishes`, `/reports/reservations` phục vụ các tab thống kê chuyên sâu.
+
+
 
 
 

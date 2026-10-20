@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController
 use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
 use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Api\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Api\Admin\ReservationController as AdminReservationController;
 use App\Http\Controllers\Api\Admin\TableController as AdminTableController;
 use App\Http\Controllers\Api\AuthController;
@@ -145,6 +146,15 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [AdminReservationController::class, 'index']);
             Route::get('/{reservationId}', [AdminReservationController::class, 'show'])->whereNumber('reservationId');
             Route::patch('/{reservationId}/status', [AdminReservationController::class, 'updateStatus'])->whereNumber('reservationId');
+        });
+
+        // B.4.2. Báo cáo Thống kê & Dashboard (RPT-01 -> RPT-04)
+        Route::prefix('reports')->group(function () {
+            Route::get('/dashboard', [AdminReportController::class, 'dashboard']);
+            Route::get('/revenue', [AdminReportController::class, 'revenue']);
+            Route::get('/orders', [AdminReportController::class, 'orders']);
+            Route::get('/top-dishes', [AdminReportController::class, 'topDishes']);
+            Route::get('/reservations', [AdminReportController::class, 'reservations']);
         });
     });
 
