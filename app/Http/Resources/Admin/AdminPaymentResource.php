@@ -24,13 +24,28 @@ class AdminPaymentResource extends JsonResource
             ? $this->trang_thai->name
             : (PaymentStatus::tryFrom($this->trang_thai)?->name ?? (string) $this->trang_thai);
 
+        $order = $this->relationLoaded('order') ? $this->order : $this->order()->first();
+        $account = $order ? ($order->relationLoaded('account') ? $order->account : $order->account()->first()) : null;
+        $profile = $account ? ($account->relationLoaded('userProfile') ? $account->userProfile : $account->userProfile()->first()) : null;
+
+        $orderDate = null;
+        if ($order && $order->ngay_dat_hang) {
+            $orderDate = is_string($order->ngay_dat_hang)
+                ? $order->ngay_dat_hang
+                : $order->ngay_dat_hang->format('Y-m-d\TH:i:s');
+        }
+
         return [
             'paymentId' => (int) $this->paymentId,
+            'orderId' => (int) $this->orderId,
             'amount' => (float) $this->amount,
             'paymentMethod' => $pMethod,
             'status' => $pStatus,
             'transactionCode' => $this->transactionCode,
             'refundReason' => $this->refundReason,
+            'orderDate' => $orderDate,
+            'customerName' => $profile?->fullName ?? $account?->username,
+            'customerPhone' => $profile?->phoneNumber,
         ];
     }
 }

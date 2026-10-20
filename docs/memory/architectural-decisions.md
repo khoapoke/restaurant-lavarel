@@ -228,6 +228,26 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Endpoint `POST /api/v1/admin/orders/{orderId}/cancel` chấp nhận `cancelReason` (chuỗi tối đa 500 ký tự).
     - Cập nhật `trang_thai = OrderStatus::CANCELLED`, đồng thời lưu vết lý do vào cột `ly_do_hoan_tien` trong bảng `THANH_TOAN`. Trả về `{ orderId, status: "CANCELLED" }`.
 
+## ADR-018: Triển khai Quản lý Thanh toán, Đối soát & Hoàn tiền Admin (PAY-04 đến PAY-07)
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** Triển khai nhóm API Quản lý Giao dịch & Thanh toán thuộc Phân hệ Quản trị viên (Phần B.3.2): Tra cứu danh sách giao dịch (`PAY-04`), Đối soát số tiền thanh toán với đơn hàng (`PAY-05`), Ghi nhận hoàn tiền giao dịch (`PAY-06`), và Xem logs webhook callback (`PAY-07`).
+- **Quyết định:**
+  - **Phân quyền:** Toàn bộ route `/api/v1/admin/payments/*` được bảo vệ bởi middleware `['auth:sanctum', 'account.active', 'role:ADMIN']` (trả về HTTP 403 Forbidden đối với Khách hàng).
+  - **Tra cứu giao dịch (`PAY-04`):**
+    - `AdminPaymentResource` trả về thông tin giao dịch chuẩn hóa: `{ paymentId, orderId, amount, paymentMethod, status, transactionCode, refundReason, orderDate, customerName, customerPhone }`.
+    - Hỗ trợ lọc theo `status` (`UNPAID`, `PAID`, `REFUNDED`, `FAILED`), phương thức `paymentMethod` (`CASH`, `BANK_TRANSFER_QR`), mã đơn hàng `orderId`, tìm kiếm theo mã giao dịch/khách hàng và phân trang `perPage`.
+  - **Đối soát số tiền thanh toán (`PAY-05`):**
+    - Hỗ trợ cả 2 chế độ: Đối soát đơn lẻ theo `orderId`/`paymentId` và Đối soát toàn bộ (Batch reconcile).
+    - So khớp `THANH_TOAN.so_tien === DON_HANG.tong_tien`. Báo cáo cụ thể `isMatched`, `difference`, `paymentStatus`, `orderStatus`, và chi tiết lỗi `issue` nếu phát hiện sai lệch số tiền hoặc trạng thái bất thường (ví dụ: đơn hoàn thành nhưng thanh toán chưa trả).
+  - **Ghi nhận hoàn tiền (`PAY-06`):**
+    - Endpoint `POST /api/v1/admin/payments/{paymentId}/refund` yêu cầu `refundReason` (chuỗi từ 3-500 ký tự).
+    - **Quy tắc cốt lõi:** Chỉ các giao dịch đã thanh toán thành công (`PaymentStatus::PAID`) mới được phép hoàn tiền. Vi phạm trả về `HTTP 400 Bad Request` với message chính xác: `"Only PAID transactions can be refunded"`.
+    - Khi hoàn tiền thành công: Cập nhật `THANH_TOAN.trang_thai = PaymentStatus::REFUNDED`, lưu `ly_do_hoan_tien`, đồng thời tự động cập nhật trạng thái đơn hàng liên kết sang `OrderStatus::CANCELLED`. Trả về payload `{ paymentId, orderId, amount, status: "REFUNDED", refundReason }`.
+  - **Tra cứu Logs Webhook Callback (`PAY-07`):**
+    - Endpoint `GET /api/v1/admin/payments/callback-logs` trả về danh sách các giao dịch có `log_callback IS NOT NULL`.
+    - Tự động parse chuỗi JSON lưu vết trong database thành đối tượng có cấu trúc (`CallbackLogResource`), hỗ trợ lọc log lỗi `onlyErrors=true` và phân trang.
+
+
 
 
 

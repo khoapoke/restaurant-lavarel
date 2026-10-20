@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController;
 use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
 use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Api\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
@@ -116,6 +117,14 @@ Route::prefix('v1')->group(function () {
             Route::get('/{orderId}', [AdminOrderController::class, 'show'])->whereNumber('orderId');
             Route::patch('/{orderId}/status', [AdminOrderController::class, 'updateStatus'])->whereNumber('orderId');
             Route::post('/{orderId}/cancel', [AdminOrderController::class, 'cancel'])->whereNumber('orderId');
+        });
+
+        // B.3. Quản lý Thanh toán & Giao dịch (PAY-04 -> PAY-07)
+        Route::prefix('payments')->group(function () {
+            Route::get('/', [AdminPaymentController::class, 'index']);
+            Route::post('/reconcile', [AdminPaymentController::class, 'reconcile']);
+            Route::post('/{paymentId}/refund', [AdminPaymentController::class, 'refund'])->whereNumber('paymentId');
+            Route::get('/callback-logs', [AdminPaymentController::class, 'callbackLogs']);
         });
     });
 
