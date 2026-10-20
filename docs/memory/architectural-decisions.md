@@ -191,6 +191,22 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Cập nhật `THANH_TOAN.trang_thai = PaymentStatus::PAID`, lưu log callback `log_callback` và cập nhật `ma_giao_dich`.
     - Tự động chuyển trạng thái đơn hàng `DON_HANG.trang_thai` sang `CONFIRMED` nếu đang ở `PENDING_CONFIRMATION`.
 
+## ADR-016: Triển khai Đặt bàn Trực tuyến Khách hàng (BKG-01 đến BKG-04)
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** Triển khai các API Đặt bàn Trực tuyến phía Khách hàng (Phần A.5): Tra cứu bàn trống (`BKG-01`), Tạo lượt đặt bàn (`BKG-02`), Sửa lượt đặt bàn (`BKG-03`), và Hủy lượt đặt bàn (`BKG-04`).
+- **Quyết định:**
+  - **Tra cứu Bàn trống (`BKG-01`):** Công khai (`Public - Guest & Customer`). Tìm kiếm theo `date`, `time`, `guestCount`. Lọc các bàn có `suc_chua >= guestCount`, trạng thái `trang_thai != MAINTENANCE`, và loại trừ toàn bộ bàn có xung đột đặt trước trong ca dùng bữa ($\pm 119$ phút) ở trạng thái `PENDING` hoặc `CONFIRMED`.
+  - **Kiểm tra Sức chứa & Bảo trì (`BKG-02`, `BKG-03`):** Nghiêm cấm đặt hoặc sửa số người vượt quá sức chứa bàn ăn (`HTTP 422: Guest count exceeds table capacity`). Chặn đặt bàn đang bảo trì (`HTTP 400: Selected table is currently under maintenance`).
+  - **Kiểm tra Thời gian Báo trước (Chính sách 1.2.5.a):**
+    - Mọi lượt đặt bàn thông thường phải cách thời điểm hiện tại tối thiểu 30 phút.
+    - Với các yêu cầu đặc biệt chứa từ khóa (`sinh nhật`, `phòng riêng`, `vip`, `chay`, `trang trí`), thời gian đặt bàn bắt buộc phải cách hiện tại tối thiểu 120 phút (02 giờ). Vi phạm trả về `HTTP 400: Special requests require at least 2 hours advance notice.`.
+  - **Chống Xung đột Trùng Khung giờ ($\pm 119$ phút):** Bàn ăn tại thời điểm $T$ được coi là đã có người đặt nếu có bản ghi `DAT_BAN` khác của bàn đó nằm trong khoảng $[T - 119', T + 119']$ với trạng thái `PENDING` hoặc `CONFIRMED` (`HTTP 409: Table is already reserved for the selected time slot`).
+  - **Điều kiện Sửa hoặc Hủy Đặt bàn (Chính sách 1.2.5.b):**
+    - Khách hàng chỉ được phép sửa (`BKG-03`) hoặc hủy (`BKG-04`) khi thời gian đến thời điểm hẹn còn tối thiểu 60 phút (`now()->diffInMinutes(thoi_gian, false) >= 60`).
+    - Nếu dưới 60 phút, hệ thống từ chối với `HTTP 409 Conflict: Cannot modify or cancel reservation less than 60 minutes before scheduled time`.
+    - Bảo vệ IDOR: Chỉ chủ sở hữu lượt đặt (`ma_tai_khoan = $accountId`) mới được xem, sửa hoặc hủy.
+
+
 
 
 

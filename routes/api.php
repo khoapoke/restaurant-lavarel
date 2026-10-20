@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Customer\MenuController;
 use App\Http\Controllers\Api\Customer\OrderController;
 use App\Http\Controllers\Api\Customer\PaymentController;
 use App\Http\Controllers\Api\Customer\ProfileController;
+use App\Http\Controllers\Api\Customer\ReservationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -33,6 +34,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/dishes', [MenuController::class, 'dishes']);
         Route::get('/dishes/{dishId}', [MenuController::class, 'dishDetail'])->whereNumber('dishId');
         Route::get('/recommendations/weather', [MenuController::class, 'weatherRecommendations']);
+
+        // A.5. Tra cứu bàn trống (Public - Guest & Customer) (BKG-01)
+        Route::get('/tables/available', [ReservationController::class, 'availableTables']);
 
         // Protected customer endpoints (Profile, Cart, Orders, Reservations)
         Route::middleware(['auth:sanctum', 'account.active', 'role:CUSTOMER'])->group(function () {
@@ -61,6 +65,15 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{orderId}/qr', [PaymentController::class, 'generateQr'])->whereNumber('orderId');
                 Route::get('/{orderId}/status', [PaymentController::class, 'getStatus'])->whereNumber('orderId');
                 Route::post('/{orderId}/retry', [PaymentController::class, 'retry'])->whereNumber('orderId');
+            });
+
+            // A.5. Đặt bàn Trực tuyến (BKG-02 -> BKG-04)
+            Route::prefix('reservations')->group(function () {
+                Route::get('/', [ReservationController::class, 'index']);
+                Route::post('/', [ReservationController::class, 'store']);
+                Route::get('/{reservationId}', [ReservationController::class, 'show'])->whereNumber('reservationId');
+                Route::put('/{reservationId}', [ReservationController::class, 'update'])->whereNumber('reservationId');
+                Route::post('/{reservationId}/cancel', [ReservationController::class, 'cancel'])->whereNumber('reservationId');
             });
         });
     });

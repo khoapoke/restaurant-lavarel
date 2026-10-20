@@ -10,6 +10,8 @@ use App\Models\Order;
 use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use \Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
 
 class OrderService
 {
@@ -123,9 +125,9 @@ class OrderService
      *
      * @param int $accountId
      * @param array<string, mixed> $params
-     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
+     * @return LengthAwarePaginator
      */
-    public function getCustomerOrders(int $accountId, array $params = []): \Illuminate\Contracts\Pagination\LengthAwarePaginator
+    public function getCustomerOrders(int $accountId, array $params = []): LengthAwarePaginator
     {
         $query = Order::with(['dishes', 'payment'])
             ->where('ma_tai_khoan', $accountId);
