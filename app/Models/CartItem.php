@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 class CartItem extends Pivot
 {
     protected $table = 'MON_AN_GIO_HANG';
+
     public $incrementing = false;
+
     public $timestamps = false;
 
     protected $fillable = [

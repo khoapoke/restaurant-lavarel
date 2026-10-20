@@ -2,12 +2,15 @@
 
 namespace App\Services\Customer;
 
+use App\Enums\KitchenItemStatus;
+use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\Payment;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -16,9 +19,8 @@ class OrderService
     /**
      * Checkout active cart to create order (ORD-01, ORD-02, ORD-03).
      *
-     * @param int $accountId
-     * @param array<string, mixed> $data
-     * @return Order
+     * @param  array<string, mixed>  $data
+     *
      * @throws HttpException
      */
     public function checkout(int $accountId, array $data): Order
@@ -30,7 +32,7 @@ class OrderService
                 ->lockForUpdate()
                 ->first();
 
-            if (!$cart || $cart->dishes->isEmpty()) {
+            if (! $cart || $cart->dishes->isEmpty()) {
                 throw new HttpException(400, 'Cannot checkout an empty cart');
             }
 
@@ -39,7 +41,7 @@ class OrderService
             $orderPivotData = [];
 
             foreach ($cart->dishes as $dish) {
-                if (!$dish->isAvailable || !$dish->isVisible || $dish->isDeleted) {
+                if (! $dish->isAvailable || ! $dish->isVisible || $dish->isDeleted) {
                     throw new HttpException(400, "Dish '{$dish->dishName}' has just sold out");
                 }
 
@@ -52,8 +54,10 @@ class OrderService
                 $totalAmount += ($unitPrice * $qty);
 
                 $orderPivotData[$dish->ma_mon_an] = [
+                    'ten_mon_snapshot' => $dish->ten_mon_an,
                     'so_luong' => $qty,
                     'don_gia' => $unitPrice,
+                    'trang_thai_bep' => KitchenItemStatus::SENT->value,
                 ];
             }
 
@@ -74,7 +78,7 @@ class OrderService
                 $shippingAddress = "[DELIVERY] {$recipientName} - {$recipientPhone} | {$address}";
             }
 
-            if (!empty($orderNote)) {
+            if (! empty($orderNote)) {
                 $shippingAddress .= " | Note: {$orderNote}";
             }
 
@@ -85,6 +89,7 @@ class OrderService
                 'trang_thai' => OrderStatus::PENDING_CONFIRMATION,
                 'dia_chi_giao_hang' => $shippingAddress,
                 'ma_tai_khoan' => $accountId,
+                'kenh' => OrderChannel::ONLINE,
             ]);
 
             // STEP 5: Chèn toàn bộ chi tiết món vào CHI_TIET_DON_HANG qua hàm attach()
@@ -100,7 +105,7 @@ class OrderService
 
             $transactionCode = null;
             if ($paymentMethod === PaymentMethod::CASH) {
-                $transactionCode = 'CASH-' . $order->ma_don_hang;
+                $transactionCode = 'CASH-'.$order->ma_don_hang;
             }
 
             Payment::create([
@@ -121,17 +126,15 @@ class OrderService
     /**
      * Get paginated customer order history with status filter (ORD-04).
      *
-     * @param int $accountId
-     * @param array<string, mixed> $params
-     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
+     * @param  array<string, mixed>  $params
      */
-    public function getCustomerOrders(int $accountId, array $params = []): \Illuminate\Contracts\Pagination\LengthAwarePaginator
+    public function getCustomerOrders(int $accountId, array $params = []): LengthAwarePaginator
     {
         $query = Order::with(['dishes', 'payment'])
             ->where('ma_tai_khoan', $accountId);
 
         // Filter by status if provided (support English enum key or Vietnamese value)
-        if (!empty($params['status'])) {
+        if (! empty($params['status'])) {
             $statusInput = trim($params['status']);
             $matchedStatus = null;
             foreach (OrderStatus::cases() as $case) {
@@ -148,15 +151,13 @@ class OrderService
         $query->orderByDesc('ma_don_hang');
 
         $perPage = (int) ($params['perPage'] ?? 10);
+
         return $query->paginate($perPage);
     }
 
     /**
      * Get detailed order by ID belonging to customer (ORD-05).
      *
-     * @param int $accountId
-     * @param int $orderId
-     * @return Order
      * @throws HttpException
      */
     public function getCustomerOrderDetail(int $accountId, int $orderId): Order
@@ -166,7 +167,7 @@ class OrderService
             ->where('ma_tai_khoan', $accountId)
             ->first();
 
-        if (!$order) {
+        if (! $order) {
             throw new HttpException(404, 'Order not found');
         }
 
@@ -176,10 +177,6 @@ class OrderService
     /**
      * Customer cancels order (ORD-06). Only allowed when status is PENDING_CONFIRMATION.
      *
-     * @param int $accountId
-     * @param int $orderId
-     * @param string|null $cancelReason
-     * @return Order
      * @throws HttpException
      */
     public function cancelCustomerOrder(int $accountId, int $orderId, ?string $cancelReason = null): Order
@@ -189,7 +186,7 @@ class OrderService
             ->where('ma_tai_khoan', $accountId)
             ->first();
 
-        if (!$order) {
+        if (! $order) {
             throw new HttpException(404, 'Order not found');
         }
 
@@ -209,4 +206,3 @@ class OrderService
         return $order;
     }
 }
-

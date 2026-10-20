@@ -11,7 +11,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Payment extends Model
 {
     protected $table = 'THANH_TOAN';
+
     protected $primaryKey = 'ma_thanh_toan';
+
     public $timestamps = false;
 
     protected $fillable = [
@@ -20,6 +22,8 @@ class Payment extends Model
         'trang_thai',
         'ma_don_hang',
         'ma_giao_dich',
+        'ma_hoa_don',
+        'idempotency_key',
         'log_callback',
         'ly_do_hoan_tien',
     ];
@@ -96,5 +100,10 @@ class Payment extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'ma_don_hang', 'ma_don_hang');
+    }
+
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'ma_hoa_don', 'ma_hoa_don');
     }
 }

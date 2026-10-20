@@ -11,7 +11,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 class Dish extends Model
 {
     protected $table = 'MON_AN';
+
     protected $primaryKey = 'ma_mon_an';
+
     public $timestamps = false;
 
     protected $fillable = [

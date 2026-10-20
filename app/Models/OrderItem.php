@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\KitchenItemStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\Pivot;
@@ -9,19 +10,28 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 class OrderItem extends Pivot
 {
     protected $table = 'CHI_TIET_DON_HANG';
-    public $incrementing = false;
+
+    protected $primaryKey = 'ma_chi_tiet';
+
+    public $incrementing = true;
+
     public $timestamps = false;
 
     protected $fillable = [
         'ma_don_hang',
         'ma_mon_an',
+        'ten_mon_snapshot',
         'so_luong',
         'don_gia',
+        'ghi_chu',
+        'trang_thai_bep',
+        'client_request_id',
     ];
 
     protected $casts = [
         'so_luong' => 'integer',
         'don_gia' => 'decimal:2',
+        'trang_thai_bep' => KitchenItemStatus::class,
     ];
 
     // Accessors / Mutators

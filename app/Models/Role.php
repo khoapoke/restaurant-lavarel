@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Role extends Model
 {
     protected $table = 'VAI_TRO';
+
     protected $primaryKey = 'ma_vai_tro';
+
     public $timestamps = false;
 
     protected $fillable = [

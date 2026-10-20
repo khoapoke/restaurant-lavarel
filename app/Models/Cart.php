@@ -11,7 +11,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Cart extends Model
 {
     protected $table = 'GIO_HANG';
+
     protected $primaryKey = 'ma_gio_hang';
+
     public $timestamps = false;
 
     protected $fillable = [

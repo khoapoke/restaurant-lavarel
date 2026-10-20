@@ -119,7 +119,11 @@ class AuthService
 
         // STEP 4: Cấp phát Sanctum Personal Access Token kèm thời gian hết hạn
         $expiresAt = $rememberMe ? now()->addDays(30) : now()->addHours(8);
-        $roleAbility = $account->role?->ten_vai_tro === RoleType::ADMIN->value ? 'role:admin' : 'role:customer';
+        $roleAbility = match ($account->role?->ten_vai_tro) {
+            RoleType::ADMIN->value => 'role:admin',
+            RoleType::STAFF->value => 'role:staff',
+            default => 'role:customer',
+        };
         $token = $account->createToken('auth_token', [$roleAbility], $expiresAt);
 
         return [

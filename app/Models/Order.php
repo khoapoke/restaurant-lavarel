@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Order extends Model
 {
     protected $table = 'DON_HANG';
+
     protected $primaryKey = 'ma_don_hang';
+
     public $timestamps = false;
 
     protected $fillable = [
@@ -22,12 +25,18 @@ class Order extends Model
         'trang_thai',
         'dia_chi_giao_hang',
         'ma_tai_khoan',
+        'ma_phien',
+        'kenh',
+        'ghi_chu',
+        'phien_ban',
     ];
 
     protected $casts = [
         'ngay_dat_hang' => 'datetime',
         'tong_tien' => 'decimal:2',
         'trang_thai' => OrderStatus::class,
+        'kenh' => OrderChannel::class,
+        'phien_ban' => 'integer',
     ];
 
     // Accessors / Mutators
@@ -96,11 +105,21 @@ class Order extends Model
             'ma_mon_an',
             'ma_don_hang',
             'ma_mon_an'
-        )->using(OrderItem::class)->withPivot(['so_luong', 'don_gia']);
+        )->using(OrderItem::class)->withPivot(['ma_chi_tiet', 'ten_mon_snapshot', 'so_luong', 'don_gia', 'ghi_chu', 'trang_thai_bep']);
     }
 
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class, 'ma_don_hang', 'ma_don_hang');
+    }
+
+    public function serviceSession(): BelongsTo
+    {
+        return $this->belongsTo(ServiceSession::class, 'ma_phien', 'ma_phien');
+    }
+
+    public function invoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class, 'ma_don_hang', 'ma_don_hang');
     }
 }

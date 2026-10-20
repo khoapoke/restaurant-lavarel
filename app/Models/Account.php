@@ -15,7 +15,9 @@ class Account extends Authenticatable
     use HasApiTokens;
 
     protected $table = 'TAI_KHOAN';
+
     protected $primaryKey = 'ma_tai_khoan';
+
     public $timestamps = false;
 
     protected $fillable = [
@@ -92,5 +94,10 @@ class Account extends Authenticatable
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class, 'ma_tai_khoan', 'ma_tai_khoan');
+    }
+
+    public function serviceSessions(): HasMany
+    {
+        return $this->hasMany(ServiceSession::class, 'ma_nhan_vien', 'ma_tai_khoan');
     }
 }

@@ -10,7 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Reservation extends Model
 {
     protected $table = 'DAT_BAN';
+
     protected $primaryKey = 'ma_dat_ban';
+
     public $timestamps = false;
 
     protected $fillable = [

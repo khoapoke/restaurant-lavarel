@@ -21,7 +21,6 @@ use App\Models\Role;
 use App\Models\UserProfile;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class RestaurantSeeder extends Seeder
@@ -100,7 +99,7 @@ class RestaurantSeeder extends Seeder
         // Admin account
         $accAdmin = Account::create([
             'ten_dang_nhap' => 'admin',
-            'mat_khau' => Hash::make('Password@123'),
+            'mat_khau' => Hash::make('123'),
             'email' => 'admin@restaurant.com',
             'trang_thai' => AccountStatus::ACTIVE,
             'ma_nguoi_dung' => $profileAdmin->ma_nguoi_dung,
@@ -110,7 +109,7 @@ class RestaurantSeeder extends Seeder
         // Staff account
         $accStaff = Account::create([
             'ten_dang_nhap' => 'staff1',
-            'mat_khau' => Hash::make('Password@123'),
+            'mat_khau' => Hash::make('123'),
             'email' => 'staff1@restaurant.com',
             'trang_thai' => AccountStatus::ACTIVE,
             'ma_nguoi_dung' => $profileStaff->ma_nguoi_dung,
@@ -195,7 +194,7 @@ class RestaurantSeeder extends Seeder
         $tableVIP = DiningTable::create([
             'ten_ban' => 'Bàn VIP01',
             'suc_chua' => 10,
-            'trang_thai' => TableStatus::OCCUPIED,
+            'trang_thai' => TableStatus::CLEANING,
             'vi_tri' => 'Tầng 2 - Phòng máy lạnh riêng',
         ]);
 
@@ -245,7 +244,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Gỏi cuốn tôm thịt',
             'gia_tien' => 45000,
             'mo_ta' => 'Bánh tráng cuốn tôm tươi, thịt ba rọi luộc và rau thơm chấm sốt tương đậu thơm bùi',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1548946526-f69e2424cf45?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/goi-cuon.jpg',
             'ma_danh_muc' => $catKhaiVi->ma_danh_muc,
             'nguyen_lieu' => ['Bánh tráng', 'Tôm thẻ', 'Thịt ba rọi', 'Bún tươi', 'Rau sống'],
             'chat_di_ung' => ['SHELLFISH'],
@@ -259,7 +258,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Súp bắp cua gà xé',
             'gia_tien' => 55000,
             'mo_ta' => 'Súp nóng béo ngọt từ thịt cua biển, ức gà xé phay, bắp Mỹ và nấm tuyết',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/sup-ga-trung.jpg',
             'ma_danh_muc' => $catKhaiVi->ma_danh_muc,
             'nguyen_lieu' => ['Thịt cua biển', 'Ức gà', 'Bắp ngọt', 'Trứng cút', 'Nấm tuyết'],
             'chat_di_ung' => ['SHELLFISH', 'EGG'],
@@ -273,7 +272,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Salad rong nho mè rang',
             'gia_tien' => 49000,
             'mo_ta' => 'Rau xanh giòn mát, cà chua bi organic kết hợp cùng sốt mè rang Nhật Bản',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/salad-rong-nho.jpg',
             'ma_danh_muc' => $catKhaiVi->ma_danh_muc,
             'nguyen_lieu' => ['Xà lách thủy canh', 'Rong nho tươi', 'Cà chua bi', 'Sốt mè rang'],
             'chat_di_ung' => ['SESAME'],
@@ -288,7 +287,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Phở bò đặc biệt',
             'gia_tien' => 79000,
             'mo_ta' => 'Nước dùng ninh từ xương ống bò 12 tiếng cùng quế hồi thảo mộc, kèm bò tái, nạm gầu giòn',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/pho-bo.jpg',
             'ma_danh_muc' => $catMonChinh->ma_danh_muc,
             'nguyen_lieu' => ['Bánh phở tươi', 'Thịt bò tái', 'Nạm gầu', 'Bò viên', 'Nước dùng xương bò'],
             'chat_di_ung' => [],
@@ -302,7 +301,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Cơm tấm sườn bì chả trứng',
             'gia_tien' => 65000,
             'mo_ta' => 'Sườn heo ướp mật ong nướng than hoa vàng rộm, bì da heo giòn ráo, chả trứng béo ngậy',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/com-tam.jpg',
             'ma_danh_muc' => $catMonChinh->ma_danh_muc,
             'nguyen_lieu' => ['Gạo tấm thơm', 'Sườn cốt lết', 'Bì sợi', 'Chả trứng chưng', 'Mỡ hành tép mỡ'],
             'chat_di_ung' => ['EGG'],
@@ -316,7 +315,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Bún chả Hà Nội nướng than hoa',
             'gia_tien' => 69000,
             'mo_ta' => 'Chả viên và chả miếng nướng đậm đà, ăn kèm bún tươi, rau kinh giới và đu đủ chua ngọt',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/bun-cha.jpg',
             'ma_danh_muc' => $catMonChinh->ma_danh_muc,
             'nguyen_lieu' => ['Bún lá', 'Thịt ba chỉ nướng', 'Chả thịt băm viên', 'Đu đủ ngâm chua', 'Nước mắm pha ấm'],
             'chat_di_ung' => [],
@@ -330,7 +329,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Gỏi ngó sen tai heo tôm thịt (Có đậu phộng)',
             'gia_tien' => 75000,
             'mo_ta' => 'Ngó sen giòn sần sật, tôm tươi luộc ngọt nước, rắc nhiều đậu phộng rang vàng giòn',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/goi-ngo-sen.jpg',
             'ma_danh_muc' => $catMonChinh->ma_danh_muc,
             'nguyen_lieu' => ['Ngó sen', 'Tôm thẻ', 'Tai heo', 'Đậu phộng rang', 'Cà rốt', 'Rau răm'],
             'chat_di_ung' => ['PEANUT', 'SHELLFISH'], // Chứa chất dị ứng
@@ -342,13 +341,13 @@ class RestaurantSeeder extends Seeder
 
         // Món Tráng Miệng
         $dishKhucBach = Dish::create([
-            'ten_mon_an' => 'Chè khúc bạch long nhãn hạnh nhân',
+            'ten_mon_an' => 'Chè bà ba Nam Bộ',
             'gia_tien' => 35000,
-            'mo_ta' => 'Khúc bạch phô mai sữa béo ngậy, long nhãn mọng nước, hạnh nhân rang thơm lừng trong nước đường thanh mát',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=600&q=80',
+            'mo_ta' => 'Khoai lang, khoai môn và đậu xanh nấu mềm trong nước cốt dừa thơm béo theo vị chè Nam Bộ',
+            'hinh_anh' => '/images/menu/che-ba-ba.jpg',
             'ma_danh_muc' => $catTrangMieng->ma_danh_muc,
-            'nguyen_lieu' => ['Khúc bạch sữa kem', 'Long nhãn', 'Hạnh nhân lát', 'Nước đường phèn'],
-            'chat_di_ung' => ['DAIRY', 'TREE_NUTS'],
+            'nguyen_lieu' => ['Khoai lang', 'Khoai môn', 'Đậu xanh', 'Nước cốt dừa', 'Bột báng'],
+            'chat_di_ung' => [],
             'the_thoi_tiet' => ['HOT_SUNNY'],
             'con_ban' => true,
             'hien_thi' => true,
@@ -359,7 +358,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Bánh flan caramen cà phê cốt dừa',
             'gia_tien' => 25000,
             'mo_ta' => 'Flan trứng sữa mịn mượt không rỗ bọt khí, hòa quyện caramen đăng đắng và nước cốt dừa',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1528975604071-b4dc52a2d18c?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/banh-flan.jpg',
             'ma_danh_muc' => $catTrangMieng->ma_danh_muc,
             'nguyen_lieu' => ['Lòng đỏ trứng', 'Sữa tươi', 'Cà phê', 'Cốt dừa'],
             'chat_di_ung' => ['EGG', 'DAIRY'],
@@ -374,7 +373,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Trà đào cam sả thanh mát',
             'gia_tien' => 38000,
             'mo_ta' => 'Cốt trà đen thơm đậm kết hợp cam vàng mọng nước, hương sả tự nhiên cùng những lát đào giòn ngọt',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/tra-dao.jpg',
             'ma_danh_muc' => $catDoUong->ma_danh_muc,
             'nguyen_lieu' => ['Trà đen Earl Grey', 'Đào ngâm Hy Lạp', 'Cam vàng', 'Sả cây'],
             'chat_di_ung' => [],
@@ -388,7 +387,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Cà phê sữa đá pha phin truyền thống',
             'gia_tien' => 29000,
             'mo_ta' => 'Hạt cà phê Robusta Buôn Ma Thuột đậm đà, sữa đặc béo ngậy đập đá nhuyễn sảng khoái',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1517256064527-09c73fc73e38?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/ca-phe-sua-da.jpg',
             'ma_danh_muc' => $catDoUong->ma_danh_muc,
             'nguyen_lieu' => ['Cà phê phin Robusta', 'Sữa đặc Ngôi Sao Phương Nam', 'Đá tinh khiết'],
             'chat_di_ung' => ['DAIRY'],
@@ -402,7 +401,7 @@ class RestaurantSeeder extends Seeder
             'ten_mon_an' => 'Trà gừng sả mật ong hoa rừng ấm nóng',
             'gia_tien' => 32000,
             'mo_ta' => 'Nước cốt gừng tươi già cay nồng, mật ong rừng nguyên chất làm ấm cơ thể trong ngày se lạnh hoặc mưa gió',
-            'hinh_anh' => 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=600&q=80',
+            'hinh_anh' => '/images/menu/tra-gung.jpg',
             'ma_danh_muc' => $catDoUong->ma_danh_muc,
             'nguyen_lieu' => ['Gừng củ già', 'Mật ong hoa rừng', 'Trà xanh Thái Nguyên', 'Chanh tươi'],
             'chat_di_ung' => [],
@@ -429,8 +428,8 @@ class RestaurantSeeder extends Seeder
         ]);
 
         $order1->dishes()->attach([
-            $dishPhoBo->ma_mon_an => ['so_luong' => 2, 'don_gia' => 79000],
-            $dishTraDao->ma_mon_an => ['so_luong' => 1, 'don_gia' => 38000],
+            $dishPhoBo->ma_mon_an => ['ten_mon_snapshot' => $dishPhoBo->ten_mon_an, 'so_luong' => 2, 'don_gia' => 79000, 'trang_thai_bep' => 'SERVED'],
+            $dishTraDao->ma_mon_an => ['ten_mon_snapshot' => $dishTraDao->ten_mon_an, 'so_luong' => 1, 'don_gia' => 38000, 'trang_thai_bep' => 'SERVED'],
         ]);
 
         Payment::create([
@@ -438,7 +437,7 @@ class RestaurantSeeder extends Seeder
             'phuong_thuc' => PaymentMethod::CASH,
             'trang_thai' => PaymentStatus::PAID,
             'ma_don_hang' => $order1->ma_don_hang,
-            'ma_giao_dich' => 'CASH-' . $order1->ma_don_hang,
+            'ma_giao_dich' => 'CASH-'.$order1->ma_don_hang,
         ]);
 
         // Đơn 2: Chờ xác nhận (PENDING_CONFIRMATION) của kh2
@@ -451,7 +450,7 @@ class RestaurantSeeder extends Seeder
         ]);
 
         $order2->dishes()->attach([
-            $dishComTam->ma_mon_an => ['so_luong' => 1, 'don_gia' => 65000],
+            $dishComTam->ma_mon_an => ['ten_mon_snapshot' => $dishComTam->ten_mon_an, 'so_luong' => 1, 'don_gia' => 65000, 'trang_thai_bep' => 'SENT'],
         ]);
 
         Payment::create([
@@ -459,7 +458,7 @@ class RestaurantSeeder extends Seeder
             'phuong_thuc' => PaymentMethod::BANK_TRANSFER_QR,
             'trang_thai' => PaymentStatus::UNPAID,
             'ma_don_hang' => $order2->ma_don_hang,
-            'ma_giao_dich' => 'QR' . date('Ymd') . '0002',
+            'ma_giao_dich' => 'QR'.date('Ymd').'0002',
         ]);
 
         // 10. Reservations (DAT_BAN)

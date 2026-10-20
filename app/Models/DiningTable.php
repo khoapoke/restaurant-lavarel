@@ -5,12 +5,15 @@ namespace App\Models;
 use App\Enums\TableStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DiningTable extends Model
 {
     protected $table = 'BAN_AN';
+
     protected $primaryKey = 'ma_ban';
+
     public $timestamps = false;
 
     protected $fillable = [
@@ -67,5 +70,17 @@ class DiningTable extends Model
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class, 'ma_ban', 'ma_ban');
+    }
+
+    public function serviceSessions(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ServiceSession::class,
+            'PHIEN_BAN',
+            'ma_ban',
+            'ma_phien',
+            'ma_ban',
+            'ma_phien'
+        )->withPivot('gan_luc');
     }
 }

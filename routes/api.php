@@ -9,6 +9,10 @@ use App\Http\Controllers\Api\Customer\MenuController;
 use App\Http\Controllers\Api\Customer\OrderController;
 use App\Http\Controllers\Api\Customer\PaymentController;
 use App\Http\Controllers\Api\Customer\ProfileController;
+use App\Http\Controllers\Api\Staff\BillingController;
+use App\Http\Controllers\Api\Staff\KitchenController;
+use App\Http\Controllers\Api\Staff\PosOrderController;
+use App\Http\Controllers\Api\Staff\PosSessionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -68,7 +72,28 @@ Route::prefix('v1')->group(function () {
     // Webhooks nhận kết quả từ Cổng thanh toán (VietQR/SePay/PayOS)
     Route::post('/webhooks/payment-callback', [PaymentController::class, 'handleCallback']);
 
-    // PHẦN B: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
+    // PHẦN B: STAFF POS APIS
+    Route::prefix('staff/pos')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
+        Route::get('/tables', [PosSessionController::class, 'floor']);
+        Route::post('/tables/{table}/complete-cleaning', [PosSessionController::class, 'completeCleaning']);
+        Route::post('/sessions', [PosSessionController::class, 'store']);
+        Route::get('/sessions/{sessionId}', [PosSessionController::class, 'show'])->whereNumber('sessionId');
+        Route::post('/sessions/{session}/orders', [PosOrderController::class, 'store']);
+        Route::post('/orders/{order}/items', [PosOrderController::class, 'addItem']);
+        Route::patch('/order-items/{item}', [PosOrderController::class, 'updateItem']);
+        Route::delete('/order-items/{item}', [PosOrderController::class, 'destroyItem']);
+        Route::post('/orders/{order}/send-kitchen', [PosOrderController::class, 'sendKitchen']);
+        Route::post('/sessions/{session}/invoices', [BillingController::class, 'createInvoice']);
+        Route::post('/sessions/{session}/close', [BillingController::class, 'close']);
+    });
+
+    Route::prefix('staff')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
+        Route::get('/kitchen/items', [KitchenController::class, 'index']);
+        Route::patch('/kitchen/items/{item}/status', [KitchenController::class, 'updateStatus']);
+        Route::post('/invoices/{invoice}/payments', [BillingController::class, 'pay']);
+    });
+
+    // PHẦN C: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
     Route::prefix('admin')->middleware(['auth:sanctum', 'account.active', 'role:ADMIN'])->group(function () {
         // B.1. Quản lý Người dùng
         Route::get('/accounts', [AdminAccountController::class, 'index']);

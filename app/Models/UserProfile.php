@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class UserProfile extends Model
 {
     protected $table = 'NGUOI_DUNG';
+
     protected $primaryKey = 'ma_nguoi_dung';
+
     public $timestamps = false;
 
     protected $fillable = [
