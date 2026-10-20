@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\Admin\CategoryController as AdminCategoryController
 use App\Http\Controllers\Api\Admin\DishController as AdminDishController;
 use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Api\Admin\ReservationController as AdminReservationController;
+use App\Http\Controllers\Api\Admin\TableController as AdminTableController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
@@ -125,6 +127,24 @@ Route::prefix('v1')->group(function () {
             Route::post('/reconcile', [AdminPaymentController::class, 'reconcile']);
             Route::post('/{paymentId}/refund', [AdminPaymentController::class, 'refund'])->whereNumber('paymentId');
             Route::get('/callback-logs', [AdminPaymentController::class, 'callbackLogs']);
+        });
+
+        // B.4. Quản lý Bàn ăn (BKG-05, BKG-06)
+        Route::prefix('tables')->group(function () {
+            Route::get('/', [AdminTableController::class, 'index']);
+            Route::post('/', [AdminTableController::class, 'store']);
+            Route::get('/{tableId}', [AdminTableController::class, 'show'])->whereNumber('tableId');
+            Route::put('/{tableId}', [AdminTableController::class, 'update'])->whereNumber('tableId');
+            Route::delete('/{tableId}', [AdminTableController::class, 'destroy'])->whereNumber('tableId');
+        });
+
+        // B.4. Quản lý Đặt bàn & Khung giờ (BKG-07 -> BKG-12)
+        Route::prefix('reservations')->group(function () {
+            Route::get('/time-slots', [AdminReservationController::class, 'getTimeSlots']);
+            Route::put('/time-slots', [AdminReservationController::class, 'updateTimeSlots']);
+            Route::get('/', [AdminReservationController::class, 'index']);
+            Route::get('/{reservationId}', [AdminReservationController::class, 'show'])->whereNumber('reservationId');
+            Route::patch('/{reservationId}/status', [AdminReservationController::class, 'updateStatus'])->whereNumber('reservationId');
         });
     });
 

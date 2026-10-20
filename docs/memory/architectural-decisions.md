@@ -247,6 +247,31 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Endpoint `GET /api/v1/admin/payments/callback-logs` trả về danh sách các giao dịch có `log_callback IS NOT NULL`.
     - Tự động parse chuỗi JSON lưu vết trong database thành đối tượng có cấu trúc (`CallbackLogResource`), hỗ trợ lọc log lỗi `onlyErrors=true` và phân trang.
 
+## ADR-019: Triển khai Quản lý Bàn ăn, Cấu hình Khung giờ & Điều phối Đặt bàn Admin (BKG-05 đến BKG-12)
+- **Ngày quyết định:** 2026-10-20
+- **Bối cảnh:** Triển khai nhóm API Quản lý Bàn ăn, Khung giờ hoạt động và Điều phối lượt đặt bàn thuộc Phân hệ Quản trị viên (Phần B.4): Quản lý bàn ăn & sức chứa (`BKG-05`, `BKG-06`), Cấu hình khung giờ đặt bàn (`BKG-07`), Tra cứu danh sách đặt bàn (`BKG-08`), và Duyệt trạng thái lượt đặt (`BKG-09` $\rightarrow$ `BKG-12`).
+- **Quyết định:**
+  - **Phân quyền:** Toàn bộ route `/api/v1/admin/tables/*` và `/api/v1/admin/reservations/*` được bảo vệ bởi middleware `['auth:sanctum', 'account.active', 'role:ADMIN']` (từ chối 403 Forbidden nếu không phải Admin).
+  - **Quản lý Bàn ăn (`BKG-05`, `BKG-06`):**
+    - Các endpoints: `GET/POST /tables`, `GET/PUT/DELETE /tables/{tableId}`.
+    - `AdminTableResource` chuẩn hóa thuộc tính: `{ tableId, tableName, capacity, status, location }`.
+    - Chặn xóa vật lý bàn ăn nếu bàn đó có các lượt đặt đang hoạt động hoặc sắp diễn ra (`PENDING` hoặc `CONFIRMED` trong vòng 120 phút) với lỗi `HTTP 400 Bad Request`.
+  - **Cấu hình Khung giờ Đặt bàn (`BKG-07`):**
+    - Endpoints: `GET/PUT /api/v1/admin/reservations/time-slots`.
+    - Quản lý cấu hình giờ mở/đóng cửa, độ dài ca ăn và danh sách khung giờ phục vụ thông qua `Cache::forever('restaurant_time_slots_config', ...)`.
+  - **Danh sách Đặt bàn Quản trị (`BKG-08`):**
+    - Endpoint: `GET /api/v1/admin/reservations` hỗ trợ bộ lọc trạng thái `status`, ngày `date`, bàn `tableId`, tìm kiếm khách hàng `search`, phân trang `perPage` và eager load đầy đủ `['diningTable', 'account.userProfile']`.
+  - **Điều phối & Đồng bộ Trạng thái Bàn ăn (`BKG-09` $\rightarrow$ `BKG-12`):**
+    - Endpoint: `PATCH /api/v1/admin/reservations/{reservationId}/status`.
+    - **Xác nhận đặt bàn (`CONFIRMED` - `BKG-09`):**
+      - Kiểm tra xung đột trùng giờ: Nếu bàn ăn đó đã có lượt đặt khác ở trạng thái `CONFIRMED` trong khoảng $[\text{thoi\_gian} - 119', \text{thoi\_gian} + 119']$, hệ thống từ chối và trả về `HTTP 409 Conflict: "Table #{tableId} has an overlapping CONFIRMED reservation at this time"`.
+      - Khi duyệt thành công: Tự động đồng bộ trạng thái bàn sang `TableStatus::RESERVED` (`Đã đặt`).
+    - **Từ chối (`REJECTED` - `BKG-10`), Hủy (`CANCELLED` - `BKG-11`) & Hoàn thành (`COMPLETED` - `BKG-12`):**
+      - Tự động giải phóng trạng thái bàn ăn về `TableStatus::AVAILABLE` (`Trống`).
+    - **Ghi chú Admin (`adminNote`):** Tự động nối và lưu vết ghi chú quản trị viên vào trường `ghi_chu`.
+    - Payload phản hồi chuẩn hóa theo spec: `{ reservationId, status, tableId, tableStatus }`.
+
+
 
 
 
