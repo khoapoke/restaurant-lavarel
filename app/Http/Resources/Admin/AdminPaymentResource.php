@@ -30,6 +30,9 @@ class AdminPaymentResource extends JsonResource
             'callbackLog' => $this->log_callback,
             'orderDate' => $this->whenLoaded('order', fn () => $this->order?->ngay_dat_hang?->format('Y-m-d\TH:i:s')),
             'orderTotal' => $this->whenLoaded('order', fn () => $this->order ? (float) $this->order->tong_tien : null),
+            'orderStatus' => $this->whenLoaded('order', fn () => $this->order?->trang_thai?->name),
+            'fulfillmentType' => $this->whenLoaded('order', fn () => $this->order?->loai_phuc_vu?->name),
+            'invoiceId' => $this->ma_hoa_don ? (int) $this->ma_hoa_don : null,
         ];
     }
 }

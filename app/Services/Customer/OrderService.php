@@ -11,6 +11,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Models\Cart;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Payment;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -152,7 +153,7 @@ class OrderService
 
         $query->orderByDesc('ma_don_hang');
 
-        $perPage = (int) ($params['perPage'] ?? 10);
+        $perPage = min(max((int) ($params['perPage'] ?? 10), 1), 50);
 
         return $query->paginate($perPage);
     }
@@ -183,28 +184,40 @@ class OrderService
      */
     public function cancelCustomerOrder(int $accountId, int $orderId, ?string $cancelReason = null): Order
     {
-        $order = Order::with('payment')
-            ->where('ma_don_hang', $orderId)
-            ->where('ma_tai_khoan', $accountId)
-            ->first();
+        return DB::transaction(function () use ($accountId, $orderId, $cancelReason): Order {
+            $order = Order::query()
+                ->where('ma_don_hang', $orderId)
+                ->where('ma_tai_khoan', $accountId)
+                ->lockForUpdate()
+                ->first();
 
-        if (! $order) {
-            throw new HttpException(404, 'Order not found');
-        }
+            if (! $order) {
+                throw new HttpException(404, 'Order not found');
+            }
 
-        // Quy tắc: Khách hàng chỉ có thể hủy đơn khi đơn hàng đang ở trạng thái PENDING_CONFIRMATION
-        if ($order->trang_thai !== OrderStatus::PENDING_CONFIRMATION) {
-            throw new HttpException(409, 'Order cannot be cancelled because it is already being prepared by the kitchen');
-        }
+            // Quy tắc: Khách hàng chỉ có thể hủy đơn khi đơn hàng đang ở trạng thái PENDING_CONFIRMATION
+            if ($order->trang_thai !== OrderStatus::PENDING_CONFIRMATION) {
+                throw new HttpException(409, 'Order cannot be cancelled because it is already being prepared by the kitchen');
+            }
 
-        $order->trang_thai = OrderStatus::CANCELLED;
-        $order->save();
+            $reason = trim((string) $cancelReason);
+            $order->trang_thai = OrderStatus::CANCELLED;
+            if ($reason !== '') {
+                $order->ghi_chu = trim(trim((string) $order->ghi_chu)."\n[KHÁCH HỦY] ".$reason);
+            }
+            $order->save();
 
-        if ($order->payment && $cancelReason && empty($order->payment->ly_do_hoan_tien)) {
-            $order->payment->ly_do_hoan_tien = $cancelReason;
-            $order->payment->save();
-        }
+            OrderItem::where('ma_don_hang', $order->ma_don_hang)
+                ->where('trang_thai_bep', '!=', KitchenItemStatus::SERVED->value)
+                ->update(['trang_thai_bep' => KitchenItemStatus::CANCELLED->value]);
 
-        return $order;
+            $payment = Payment::query()->where('ma_don_hang', $order->ma_don_hang)->lockForUpdate()->first();
+            if ($payment && $reason !== '' && empty($payment->ly_do_hoan_tien)) {
+                $payment->ly_do_hoan_tien = $reason;
+                $payment->save();
+            }
+
+            return $order->load('payment');
+        });
     }
 }

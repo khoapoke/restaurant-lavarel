@@ -10,20 +10,17 @@ class DishService
 {
     /**
      * Get paginated dishes list with filters for Admin.
-     *
-     * @param array $filters
-     * @return LengthAwarePaginator
      */
     public function getDishes(array $filters = []): LengthAwarePaginator
     {
         $query = Dish::with('category')->where('da_xoa', false);
 
-        if (!empty($filters['keyword'])) {
+        if (! empty($filters['keyword'])) {
             $keyword = trim($filters['keyword']);
             $query->where('ten_mon_an', 'like', "%{$keyword}%");
         }
 
-        if (!empty($filters['categoryId']) && is_numeric($filters['categoryId'])) {
+        if (! empty($filters['categoryId']) && is_numeric($filters['categoryId'])) {
             $query->where('ma_danh_muc', (int) $filters['categoryId']);
         }
 
@@ -49,7 +46,7 @@ class DishService
             $query->where('gia_tien', '<=', (float) $filters['maxPrice']);
         }
 
-        $perPage = (int) ($filters['perPage'] ?? 10);
+        $perPage = min(max((int) ($filters['perPage'] ?? 10), 1), 100);
         $page = (int) ($filters['page'] ?? 1);
 
         return $query->orderBy('ma_mon_an', 'asc')
@@ -59,15 +56,13 @@ class DishService
     /**
      * Get dish detail by ID.
      *
-     * @param int $dishId
-     * @return Dish
      * @throws HttpException
      */
     public function getDishDetail(int $dishId): Dish
     {
         $dish = Dish::with('category')->where('da_xoa', false)->find($dishId);
 
-        if (!$dish) {
+        if (! $dish) {
             throw new HttpException(404, 'Dish not found');
         }
 
@@ -76,9 +71,6 @@ class DishService
 
     /**
      * Create a new dish (MNU-13).
-     *
-     * @param array $data
-     * @return Dish
      */
     public function createDish(array $data): Dish
     {
@@ -104,9 +96,6 @@ class DishService
     /**
      * Update an existing dish (MNU-14).
      *
-     * @param int $dishId
-     * @param array $data
-     * @return Dish
      * @throws HttpException
      */
     public function updateDish(int $dishId, array $data): Dish
@@ -153,9 +142,6 @@ class DishService
     /**
      * Update dish availability (on/off stock - MNU-15).
      *
-     * @param int $dishId
-     * @param bool|null $isAvailable
-     * @return Dish
      * @throws HttpException
      */
     public function updateAvailability(int $dishId, ?bool $isAvailable = null): Dish
@@ -165,7 +151,7 @@ class DishService
         if ($isAvailable !== null) {
             $dish->con_ban = $isAvailable;
         } else {
-            $dish->con_ban = !$dish->con_ban;
+            $dish->con_ban = ! $dish->con_ban;
         }
 
         $dish->save();
@@ -177,9 +163,6 @@ class DishService
     /**
      * Update dish visibility (hide/show - MNU-16).
      *
-     * @param int $dishId
-     * @param bool|null $isVisible
-     * @return Dish
      * @throws HttpException
      */
     public function updateVisibility(int $dishId, ?bool $isVisible = null): Dish
@@ -189,7 +172,7 @@ class DishService
         if ($isVisible !== null) {
             $dish->hien_thi = $isVisible;
         } else {
-            $dish->hien_thi = !$dish->hien_thi;
+            $dish->hien_thi = ! $dish->hien_thi;
         }
 
         $dish->save();
@@ -202,8 +185,6 @@ class DishService
      * Soft delete a dish (MNU-17).
      * Tuyệt đối không xóa vật lý vì sẽ vi phạm khóa ngoại trong CHI_TIET_DON_HANG.
      *
-     * @param int $dishId
-     * @return Dish
      * @throws HttpException
      */
     public function deleteDish(int $dishId): Dish

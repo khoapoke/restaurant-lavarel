@@ -2,15 +2,19 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\PosSessionStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\TableStatus;
 use App\Models\Reservation;
+use App\Services\Shared\TableStatusSynchronizer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ReservationService
 {
+    public function __construct(private readonly TableStatusSynchronizer $tableStatusSynchronizer) {}
+
     /** @param array<string, mixed> $filters */
     public function getReservations(array $filters = []): LengthAwarePaginator
     {
@@ -34,8 +38,18 @@ class ReservationService
             });
         }
 
-        return $query->orderBy('thoi_gian')
-            ->orderBy('ma_dat_ban')
+        $scope = (string) ($filters['scope'] ?? (empty($filters['date']) ? 'upcoming' : 'all'));
+        if ($scope === 'upcoming') {
+            $query->where('thoi_gian', '>=', now()->startOfDay());
+        } elseif ($scope === 'past') {
+            $query->where('thoi_gian', '<', now()->startOfDay());
+        }
+
+        $direction = $scope === 'past' ? 'desc' : 'asc';
+
+        return $query->withExists(['serviceSessions as is_seated' => fn ($sessionQuery) => $sessionQuery->where('trang_thai', '!=', PosSessionStatus::CANCELLED->value)])
+            ->orderBy('thoi_gian', $direction)
+            ->orderBy('ma_dat_ban', $direction)
             ->paginate(min(max((int) ($filters['perPage'] ?? 15), 1), 50));
     }
 
@@ -52,7 +66,18 @@ class ReservationService
                 throw new HttpException(409, "Invalid reservation transition from {$reservation->trang_thai->name} to {$target->name}");
             }
 
+            $hasActiveSession = $reservation->serviceSessions()
+                ->whereIn('trang_thai', [PosSessionStatus::OPEN->value, PosSessionStatus::AWAITING_PAYMENT->value])
+                ->exists();
+            if ($hasActiveSession && $target !== ReservationStatus::COMPLETED) {
+                throw new HttpException(409, 'The guests are already seated. Close the POS session instead');
+            }
+
             if ($target === ReservationStatus::CONFIRMED) {
+                if ($reservation->thoi_gian->lt(now()->subMinutes(TableStatusSynchronizer::SLOT_MINUTES))) {
+                    throw new HttpException(409, 'This reservation time has already passed');
+                }
+
                 if ($reservation->diningTable->trang_thai === TableStatus::MAINTENANCE) {
                     throw new HttpException(409, 'The selected table is under maintenance');
                 }
@@ -69,11 +94,6 @@ class ReservationService
                 if ($overlapExists) {
                     throw new HttpException(409, 'This table has an overlapping confirmed reservation');
                 }
-
-                if ($reservation->thoi_gian->isToday()
-                    && $reservation->diningTable->trang_thai === TableStatus::AVAILABLE) {
-                    $reservation->diningTable->update(['trang_thai' => TableStatus::RESERVED]);
-                }
             }
 
             if ($adminNote) {
@@ -82,10 +102,7 @@ class ReservationService
             $reservation->trang_thai = $target;
             $reservation->save();
 
-            if (in_array($target, [ReservationStatus::COMPLETED, ReservationStatus::CANCELLED], true)
-                && $reservation->diningTable->trang_thai === TableStatus::RESERVED) {
-                $reservation->diningTable->update(['trang_thai' => TableStatus::AVAILABLE]);
-            }
+            $this->tableStatusSynchronizer->refreshReservationHold($reservation->diningTable);
 
             return $reservation->fresh()->load(['account.userProfile', 'diningTable']);
         });

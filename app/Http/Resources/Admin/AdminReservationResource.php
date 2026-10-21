@@ -25,6 +25,7 @@ class AdminReservationResource extends JsonResource
             'guestCount' => (int) $this->so_luong_khach,
             'status' => $status,
             'note' => $this->ghi_chu,
+            'isSeated' => (bool) ($this->is_seated ?? false),
             'customer' => $this->whenLoaded('account', fn (): array => [
                 'accountId' => (int) $this->account->ma_tai_khoan,
                 'username' => $this->account->ten_dang_nhap,

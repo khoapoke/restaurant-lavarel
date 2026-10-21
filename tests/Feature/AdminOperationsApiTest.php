@@ -40,7 +40,9 @@ class AdminOperationsApiTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['data' => [
                 'period', 'revenue', 'orders', 'topSellingDishes', 'reservations', 'operations',
-            ]]);
+            ]])
+            ->assertJsonPath('data.attention.pendingOrders', 1)
+            ->assertJsonPath('data.revenue.byMethod.BANK_TRANSFER_QR', 124000);
 
         $created = $this->withToken($token)->postJson('/api/v1/admin/tables', [
             'tableName' => 'Bàn sân vườn 09',

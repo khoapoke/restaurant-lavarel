@@ -7,12 +7,15 @@ use App\Enums\ReservationStatus;
 use App\Enums\TableStatus;
 use App\Models\DiningTable;
 use App\Models\ServiceSession;
+use App\Services\Shared\TableStatusSynchronizer;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class TableService
 {
+    public function __construct(private readonly TableStatusSynchronizer $tableStatusSynchronizer) {}
+
     public function getTables(): Collection
     {
         return DiningTable::query()
@@ -29,6 +32,9 @@ class TableService
     public function create(array $data): DiningTable
     {
         $status = $this->statusFromName((string) ($data['status'] ?? TableStatus::AVAILABLE->name));
+        if (! in_array($status, [TableStatus::AVAILABLE, TableStatus::MAINTENANCE], true)) {
+            throw new HttpException(422, 'A new table can only start as AVAILABLE or MAINTENANCE');
+        }
 
         return DiningTable::create([
             'ten_ban' => trim($data['tableName']),
@@ -56,12 +62,20 @@ class TableService
                 }
             }
 
+            $statusChanged = false;
             if (isset($data['status'])) {
                 $targetStatus = $this->statusFromName((string) $data['status']);
-                if ($targetStatus !== TableStatus::OCCUPIED && $this->hasActiveSession($tableId)) {
-                    throw new HttpException(409, 'Cannot change the status of a table in an active POS session');
+                if ($targetStatus !== $table->trang_thai) {
+                    $this->assertManualStatus($targetStatus);
+                    if ($this->hasActiveSession($tableId)) {
+                        throw new HttpException(409, 'Cannot change the status of a table in an active POS session');
+                    }
+                    if ($targetStatus === TableStatus::MAINTENANCE && $this->tableStatusSynchronizer->hasReservationHoldToday($tableId)) {
+                        throw new HttpException(409, 'This table has a confirmed reservation today. Cancel or move the reservation before maintenance');
+                    }
+                    $table->trang_thai = $targetStatus;
+                    $statusChanged = true;
                 }
-                $table->trang_thai = $targetStatus;
             }
 
             if (isset($data['tableName'])) {
@@ -75,9 +89,25 @@ class TableService
             }
 
             $table->save();
+            if ($statusChanged && $table->trang_thai === TableStatus::AVAILABLE) {
+                $this->tableStatusSynchronizer->refreshReservationHold($table);
+            }
 
-            return $table->fresh()->loadCount('reservations');
+            return $table->fresh()->loadCount(['reservations' => fn ($query) => $query->whereIn('trang_thai', [
+                ReservationStatus::PENDING->value,
+                ReservationStatus::CONFIRMED->value,
+            ])->where('thoi_gian', '>=', now())]);
         });
+    }
+
+    /**
+     * RESERVED and OCCUPIED are driven by reservations and POS sessions, never set by hand.
+     */
+    private function assertManualStatus(TableStatus $status): void
+    {
+        if (! in_array($status, [TableStatus::AVAILABLE, TableStatus::CLEANING, TableStatus::MAINTENANCE], true)) {
+            throw new HttpException(422, "{$status->name} is managed automatically by reservations and POS sessions");
+        }
     }
 
     private function hasActiveSession(int $tableId): bool

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\ConfirmPaymentRequest;
 use App\Http\Requests\Admin\ReconcilePaymentsRequest;
 use App\Http\Requests\Admin\RefundPaymentRequest;
 use App\Http\Resources\Admin\AdminPaymentResource;
@@ -38,6 +39,18 @@ class PaymentController extends Controller
             $this->paymentService->reconcile($request->validated('paymentIds') ?? []),
             'Payment reconciliation completed'
         );
+    }
+
+    public function confirm(ConfirmPaymentRequest $request, int $paymentId): JsonResponse
+    {
+        $payment = $this->paymentService->confirmTransfer(
+            $paymentId,
+            $request->user(),
+            $request->validated('transactionCode'),
+            $request->validated('note')
+        );
+
+        return $this->successResponse(new AdminPaymentResource($payment), 'Bank transfer confirmed successfully');
     }
 
     public function refund(RefundPaymentRequest $request, int $paymentId): JsonResponse

@@ -175,7 +175,7 @@ class PosOrderService
 
     private function assertOrderAcceptsItems(Order $order): void
     {
-        if (! in_array($order->trang_thai, [OrderStatus::DRAFT, OrderStatus::PREPARING], true)) {
+        if (! in_array($order->trang_thai, [OrderStatus::DRAFT, OrderStatus::PREPARING, OrderStatus::READY], true)) {
             throw new HttpException(409, 'This order no longer accepts new items.');
         }
     }

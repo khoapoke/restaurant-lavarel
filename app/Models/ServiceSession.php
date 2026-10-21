@@ -19,10 +19,12 @@ class ServiceSession extends Model
 
     protected $fillable = [
         'ma_nhan_vien',
+        'ma_dat_ban',
         'so_luong_khach',
         'trang_thai',
         'mo_luc',
         'dong_luc',
+        'ly_do_huy',
         'phien_ban',
         'idempotency_key',
         'request_hash',
@@ -39,6 +41,11 @@ class ServiceSession extends Model
     public function staff(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'ma_nhan_vien', 'ma_tai_khoan');
+    }
+
+    public function reservation(): BelongsTo
+    {
+        return $this->belongsTo(Reservation::class, 'ma_dat_ban', 'ma_dat_ban');
     }
 
     public function tables(): BelongsToMany

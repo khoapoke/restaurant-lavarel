@@ -218,11 +218,15 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - `READY` tự khởi tạo trạng thái chờ bàn giao phù hợp. Chỉ trạng thái giao nhận cuối mới chuyển đơn sang `COMPLETED`; không cho chuyển trực tiếp `READY → COMPLETED`.
   - Đơn QR phải thanh toán trước khi giao cho tài xế hoặc hoàn tất bàn giao. Đơn tiền mặt được ghi nhận thanh toán tại thời điểm `DELIVERED`/`COLLECTED`; POS tại bàn chốt qua luồng thanh toán phiên phục vụ.
 
-
-
-
-
-
-
-
-
+## ADR-019: Hoàn thiện vận hành MVP — liên kết đặt bàn với POS, KDS hợp nhất, bảo mật thanh toán
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Rà soát end-to-end cho thấy: bàn `RESERVED` không mở được phiên và đặt bàn không gắn với phiên phục vụ; món của đơn online (kể cả chưa xác nhận/đã hủy) lọt vào KDS và có thể đẩy đơn qua `READY` mà bỏ qua bàn giao; admin có thể đổi trạng thái/hủy đơn `DINE_IN` ngoài POS và đặt tay `OCCUPIED`/`RESERVED`; webhook thanh toán không kiểm chữ ký; ứng dụng chạy múi giờ UTC trong khi giờ đặt bàn là giờ Việt Nam.
+- **Quyết định:**
+  - Thêm cột `PHIEN_PHUC_VU.ma_dat_ban` (FK `DAT_BAN`, `nullOnDelete`) và `ly_do_huy` (migration `2026_10_20_170606`, idempotent). Mở phiên nhận `reservationId`: lượt đặt phải `CONFIRMED`, đúng bàn, trong hôm nay, chưa nhận bàn. Bàn có lượt `CONFIRMED` trong khung ±119 phút chỉ mở được cho đúng lượt đó. Đóng phiên → lượt đặt `COMPLETED`.
+  - `TableStatusSynchronizer` là nơi duy nhất quyết định `AVAILABLE ↔ RESERVED` theo lượt đặt `CONFIRMED` trong ngày; dùng chung cho admin duyệt/hủy, khách sửa/hủy, hủy phiên, vệ sinh xong. Admin chỉ đặt tay `AVAILABLE`, `CLEANING`, `MAINTENANCE`.
+  - POS: hủy phiên mở nhầm khi chưa có món gửi bếp; `reopen` hủy (`VOID`) hóa đơn chưa trả để gọi thêm món, lập lại hóa đơn tính lại tổng trên cùng mã; đơn `READY` vẫn nhận thêm món; thanh toán QR tại bàn lưu `transactionCode`, hóa đơn mở trả mã VietQR `HD{id}`.
+  - KDS hiển thị món POS và món đơn online đã xác nhận; khóa đơn (`lockForUpdate`) trước khi khóa món để tránh race khi nhiều món cùng hoàn tất. Đơn online: món đầu tiên bắt đầu → `PREPARING`, tất cả `READY` → `READY` + trạng thái chờ bàn giao; không `SERVED` ở bếp. Thao tác trạng thái đơn của admin đồng bộ ngược trạng thái món.
+  - Admin không điều khiển đơn `DINE_IN`; không hủy đơn đang `OUT_FOR_DELIVERY`. `AdminOrderResource.availableActions` là nguồn duy nhất cho nút thao tác trên frontend.
+  - Thanh toán: `POST /admin/payments/{id}/confirm` để xác nhận chuyển khoản thủ công (lưu vết người xác nhận). Webhook bắt buộc HMAC-SHA256 (`PAYMENT_WEBHOOK_SECRET`), bắt buộc số tiền, idempotent, có transaction + khóa; tiền về cho đơn đã hủy ghi `PAID` kèm `requiresRefund`. Cấu hình VietQR chuyển sang `config('services.vietqr')` qua `VietQrService` (không gọi `env()` trong service).
+  - `config('app.timezone')` mặc định `Asia/Ho_Chi_Minh` (`APP_TIMEZONE`). Dữ liệu cũ tạo khi chạy UTC sẽ hiển thị lệch 7 giờ (chỉ ảnh hưởng dữ liệu demo cũ).
+  - Rate limit: đăng ký 10/phút, đăng nhập 20/phút, webhook 60/phút. Dashboard bổ sung cơ cấu doanh thu, tiền hoàn, việc cần xử lý.

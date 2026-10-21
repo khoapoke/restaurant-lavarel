@@ -31,8 +31,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     // 0. Shared Authentication APIs
     Route::prefix('auth')->group(function () {
-        Route::post('/register', [AuthController::class, 'register']);
-        Route::post('/login', [AuthController::class, 'login']);
+        Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:20,1');
         Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
     });
 
@@ -83,7 +83,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Webhooks nhận kết quả từ Cổng thanh toán (VietQR/SePay/PayOS)
-    Route::post('/webhooks/payment-callback', [PaymentController::class, 'handleCallback']);
+    Route::post('/webhooks/payment-callback', [PaymentController::class, 'handleCallback'])->middleware('throttle:60,1');
 
     // PHẦN B: STAFF POS APIS
     Route::prefix('staff/pos')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
@@ -97,7 +97,9 @@ Route::prefix('v1')->group(function () {
         Route::delete('/order-items/{item}', [PosOrderController::class, 'destroyItem']);
         Route::post('/orders/{order}/send-kitchen', [PosOrderController::class, 'sendKitchen']);
         Route::post('/sessions/{session}/invoices', [BillingController::class, 'createInvoice']);
+        Route::post('/sessions/{session}/reopen', [BillingController::class, 'reopen']);
         Route::post('/sessions/{session}/close', [BillingController::class, 'close']);
+        Route::post('/sessions/{session}/cancel', [PosSessionController::class, 'cancel']);
     });
 
     Route::prefix('staff')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
@@ -144,6 +146,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/payments/reconcile', [AdminPaymentController::class, 'reconcile']);
         Route::get('/payments/callback-logs', [AdminPaymentController::class, 'callbackLogs']);
         Route::post('/payments/{paymentId}/refund', [AdminPaymentController::class, 'refund'])->whereNumber('paymentId');
+        Route::post('/payments/{paymentId}/confirm', [AdminPaymentController::class, 'confirm'])->whereNumber('paymentId');
 
         // B.4. Bàn ăn, đặt bàn và báo cáo
         Route::get('/tables', [AdminTableController::class, 'index']);

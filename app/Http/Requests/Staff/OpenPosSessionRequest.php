@@ -24,6 +24,7 @@ class OpenPosSessionRequest extends FormRequest
             'tableIds' => ['required', 'array', 'min:1'],
             'tableIds.*' => ['required', 'integer', 'distinct', 'exists:BAN_AN,ma_ban'],
             'guestCount' => ['required', 'integer', 'min:1', 'max:50'],
+            'reservationId' => ['nullable', 'integer', 'exists:DAT_BAN,ma_dat_ban'],
             'idempotencyKey' => ['required', 'string', 'min:12', 'max:80'],
         ];
     }

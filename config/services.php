@@ -35,4 +35,17 @@ return [
         ],
     ],
 
+    'vietqr' => [
+        'bank_bin' => env('VIETQR_BANK_BIN', '970436'),
+        'account_no' => env('VIETQR_ACCOUNT_NO', '1029384756'),
+        'account_name' => env('VIETQR_ACCOUNT_NAME', 'MOC DINING'),
+        'template' => env('VIETQR_TEMPLATE', 'compact2'),
+        'expires_minutes' => (int) env('VIETQR_EXPIRES_MINUTES', 15),
+    ],
+
+    'payment_webhook' => [
+        'secret' => env('PAYMENT_WEBHOOK_SECRET'),
+        'allow_unsigned' => (bool) env('PAYMENT_WEBHOOK_ALLOW_UNSIGNED', false),
+    ],
+
 ];

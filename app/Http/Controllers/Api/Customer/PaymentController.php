@@ -21,10 +21,6 @@ class PaymentController extends Controller
 
     /**
      * Generate VietQR code for order payment (PAY-01).
-     *
-     * @param Request $request
-     * @param int $orderId
-     * @return JsonResponse
      */
     public function generateQr(Request $request, int $orderId): JsonResponse
     {
@@ -36,10 +32,6 @@ class PaymentController extends Controller
 
     /**
      * Get payment transaction status (PAY-02).
-     *
-     * @param Request $request
-     * @param int $orderId
-     * @return JsonResponse
      */
     public function getStatus(Request $request, int $orderId): JsonResponse
     {
@@ -51,10 +43,6 @@ class PaymentController extends Controller
 
     /**
      * Retry payment when expired or failed (PAY-03).
-     *
-     * @param Request $request
-     * @param int $orderId
-     * @return JsonResponse
      */
     public function retry(Request $request, int $orderId): JsonResponse
     {
@@ -66,14 +54,11 @@ class PaymentController extends Controller
 
     /**
      * Webhook callback from payment gateway (VietQR/SePay/PayOS).
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function handleCallback(Request $request): JsonResponse
     {
         $signature = $request->header('x-signature') ?? $request->header('signature');
-        $payment = $this->paymentService->processWebhook($request->all(), $signature);
+        $payment = $this->paymentService->processWebhook($request->all(), $request->getContent(), $signature);
 
         return $this->successResponse([
             'orderId' => (int) $payment->ma_don_hang,

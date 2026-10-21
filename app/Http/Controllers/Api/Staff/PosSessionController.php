@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api\Staff;
 
 use App\Enums\TableStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Staff\CancelPosSessionRequest;
 use App\Http\Requests\Staff\OpenPosSessionRequest;
 use App\Http\Resources\Staff\PosSessionResource;
 use App\Http\Resources\Staff\PosTableResource;
 use App\Models\DiningTable;
+use App\Models\ServiceSession;
 use App\Services\Staff\PosSessionService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -52,6 +54,14 @@ class PosSessionController extends Controller
             new PosSessionResource($result['session']),
             $result['created'] ? 'POS session opened successfully' : 'Existing POS session returned',
             $result['created'] ? 201 : 200
+        );
+    }
+
+    public function cancel(CancelPosSessionRequest $request, ServiceSession $session): JsonResponse
+    {
+        return $this->successResponse(
+            new PosSessionResource($this->posSessionService->cancel($session, $request->validated('reason'))),
+            'POS session cancelled successfully'
         );
     }
 

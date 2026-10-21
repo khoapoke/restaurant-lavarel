@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\FulfillmentType;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\PosSessionStatus;
@@ -75,10 +76,44 @@ class ReportService
             ->get()
             ->countBy(fn (DiningTable $table): string => $table->trang_thai->name);
 
+        $revenueByMethod = $paidPayments
+            ->groupBy(fn (Payment $payment): string => $payment->phuong_thuc->name)
+            ->map(fn ($payments): float => round((float) $payments->sum('so_tien'), 2));
+
+        $refundedAmount = (float) Payment::query()
+            ->where('trang_thai', PaymentStatus::REFUNDED->value)
+            ->whereHas('order', fn ($query) => $query->whereBetween('ngay_dat_hang', [$from, $to]))
+            ->sum('so_tien');
+
+        $billableOrders = $orders->reject(fn (Order $order): bool => in_array($order->trang_thai, [OrderStatus::CANCELLED, OrderStatus::DRAFT], true));
+        $ordersByType = $billableOrders->countBy(fn (Order $order): string => $order->loai_phuc_vu->name);
+
+        $attention = [
+            'pendingOrders' => Order::query()->where('trang_thai', OrderStatus::PENDING_CONFIRMATION->value)->count(),
+            'readyForHandoff' => Order::query()
+                ->where('trang_thai', OrderStatus::READY->value)
+                ->where('loai_phuc_vu', '!=', FulfillmentType::DINE_IN->value)
+                ->count(),
+            'refundsPending' => Payment::query()
+                ->where('trang_thai', PaymentStatus::PAID->value)
+                ->whereHas('order', fn ($query) => $query->where('trang_thai', OrderStatus::CANCELLED->value))
+                ->count(),
+            'reservationsToConfirm' => Reservation::query()
+                ->where('trang_thai', ReservationStatus::PENDING->value)
+                ->where('thoi_gian', '>=', now())
+                ->count(),
+        ];
+
         return [
             'period' => ['fromDate' => $from->toDateString(), 'toDate' => $to->toDateString()],
             'revenue' => [
                 'totalPaidRevenue' => round((float) $paidPayments->sum('so_tien'), 2),
+                'refundedAmount' => round($refundedAmount, 2),
+                'averageOrderValue' => $paidPayments->count() > 0 ? round((float) $paidPayments->avg('so_tien'), 2) : 0,
+                'byMethod' => [
+                    'CASH' => (float) ($revenueByMethod['CASH'] ?? 0),
+                    'BANK_TRANSFER_QR' => (float) ($revenueByMethod['BANK_TRANSFER_QR'] ?? 0),
+                ],
                 'dailySeries' => $dailySeries,
             ],
             'orders' => [
@@ -87,7 +122,13 @@ class ReportService
                 'cancelledCount' => $cancelledOrders->count(),
                 'pendingCount' => $orders->where('trang_thai', OrderStatus::PENDING_CONFIRMATION)->count(),
                 'completionRate' => $totalOrders > 0 ? round($completedOrders->count() / $totalOrders * 100, 2) : 0,
+                'byFulfillmentType' => [
+                    'DELIVERY' => (int) ($ordersByType['DELIVERY'] ?? 0),
+                    'PICKUP' => (int) ($ordersByType['PICKUP'] ?? 0),
+                    'DINE_IN' => (int) ($ordersByType['DINE_IN'] ?? 0),
+                ],
             ],
+            'attention' => $attention,
             'topSellingDishes' => $topSellingDishes,
             'reservations' => [
                 'totalBookings' => $reservations->count(),

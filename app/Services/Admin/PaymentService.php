@@ -2,7 +2,11 @@
 
 namespace App\Services\Admin;
 
+use App\Enums\OrderStatus;
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Models\Account;
+use App\Models\Order;
 use App\Models\Payment;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,11 +25,64 @@ class PaymentService
         }
 
         if (! empty($filters['method'])) {
-            $query->where('phuong_thuc', (string) $filters['method']);
+            $query->where('phuong_thuc', $this->methodValue((string) $filters['method']));
+        }
+
+        if (! empty($filters['keyword'])) {
+            $keyword = ltrim(trim((string) $filters['keyword']), '#');
+            $query->where(function ($nested) use ($keyword): void {
+                $nested->where('ma_don_hang', $keyword)
+                    ->orWhere('ma_thanh_toan', $keyword)
+                    ->orWhere('ma_giao_dich', 'like', "%{$keyword}%");
+            });
         }
 
         return $query->orderByDesc('ma_thanh_toan')
             ->paginate(min(max((int) ($filters['perPage'] ?? 15), 1), 50));
+    }
+
+    /**
+     * Record a bank transfer the restaurant verified in its banking app (PAY-08).
+     */
+    public function confirmTransfer(int $paymentId, Account $admin, string $transactionCode, ?string $note = null): Payment
+    {
+        return DB::transaction(function () use ($paymentId, $admin, $transactionCode, $note): Payment {
+            $payment = Payment::query()->lockForUpdate()->findOrFail($paymentId);
+            $order = Order::query()->lockForUpdate()->findOrFail($payment->ma_don_hang);
+
+            if ($payment->trang_thai === PaymentStatus::PAID) {
+                throw new HttpException(409, 'This payment has already been confirmed');
+            }
+
+            if ($payment->trang_thai === PaymentStatus::REFUNDED) {
+                throw new HttpException(409, 'A refunded payment cannot be confirmed again');
+            }
+
+            if ($payment->phuong_thuc !== PaymentMethod::BANK_TRANSFER_QR) {
+                throw new HttpException(409, 'Cash payments are settled automatically at handoff');
+            }
+
+            if ($order->trang_thai === OrderStatus::CANCELLED) {
+                throw new HttpException(409, 'Cannot confirm a transfer for a cancelled order');
+            }
+
+            $payment->update([
+                'trang_thai' => PaymentStatus::PAID,
+                'ma_giao_dich' => trim($transactionCode),
+                'log_callback' => json_encode([
+                    'source' => 'MANUAL_CONFIRMATION',
+                    'confirmedBy' => (int) $admin->ma_tai_khoan,
+                    'note' => $note,
+                    'confirmedAt' => now()->toIso8601String(),
+                ], JSON_UNESCAPED_UNICODE),
+            ]);
+
+            if ($order->trang_thai === OrderStatus::PENDING_CONFIRMATION) {
+                $order->update(['trang_thai' => OrderStatus::CONFIRMED]);
+            }
+
+            return $payment->fresh()->load('order');
+        });
     }
 
     /** @param list<int> $paymentIds */
@@ -91,5 +148,16 @@ class PaymentService
         }
 
         throw new HttpException(422, 'Unknown payment status');
+    }
+
+    private function methodValue(string $input): string
+    {
+        foreach (PaymentMethod::cases() as $method) {
+            if ($method->name === $input || $method->value === $input) {
+                return $method->value;
+            }
+        }
+
+        throw new HttpException(422, 'Unknown payment method');
     }
 }

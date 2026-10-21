@@ -6,6 +6,7 @@ use App\Enums\ReservationStatus;
 use App\Enums\TableStatus;
 use App\Models\DiningTable;
 use App\Models\Reservation;
+use App\Services\Shared\TableStatusSynchronizer;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -15,6 +16,11 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ReservationService
 {
+    /** Customers may change or cancel a booking until this many minutes before arrival. */
+    public const MODIFY_CUTOFF_MINUTES = 60;
+
+    public function __construct(private readonly TableStatusSynchronizer $tableStatusSynchronizer) {}
+
     /** @param array{date: string, time: string, guestCount: int|string} $data */
     public function getAvailableTables(array $data): Collection
     {
@@ -100,12 +106,24 @@ class ReservationService
             $this->assertTableCanBeBooked($table, $guestCount);
             $this->assertNoOverlap($tableId, $reservationTime, $reservation->ma_dat_ban);
 
+            $previousTableId = (int) $reservation->ma_ban;
+            $bookingChanged = ! $reservationTime->equalTo($reservation->thoi_gian)
+                || $guestCount !== (int) $reservation->so_luong_khach
+                || $tableId !== $previousTableId;
+
             $reservation->update([
                 'thoi_gian' => $reservationTime,
                 'so_luong_khach' => $guestCount,
                 'ghi_chu' => $note,
                 'ma_ban' => $tableId,
+                // A confirmed booking that moves needs the restaurant to confirm it again.
+                'trang_thai' => $bookingChanged ? ReservationStatus::PENDING : $reservation->trang_thai,
             ]);
+
+            $this->tableStatusSynchronizer->refreshReservationHold($table);
+            if ($previousTableId !== $tableId) {
+                $this->tableStatusSynchronizer->refreshReservationHold(DiningTable::query()->lockForUpdate()->findOrFail($previousTableId));
+            }
 
             return $reservation->fresh()->load('diningTable');
         });
@@ -125,11 +143,10 @@ class ReservationService
             }
 
             $this->assertCustomerCanModify($reservation);
-            $wasConfirmed = $reservation->trang_thai === ReservationStatus::CONFIRMED;
             $reservation->update(['trang_thai' => ReservationStatus::CANCELLED]);
 
-            if ($wasConfirmed && $reservation->diningTable?->trang_thai === TableStatus::RESERVED) {
-                $reservation->diningTable->update(['trang_thai' => TableStatus::AVAILABLE]);
+            if ($reservation->diningTable) {
+                $this->tableStatusSynchronizer->refreshReservationHold($reservation->diningTable);
             }
 
             return $reservation->fresh()->load('diningTable');
@@ -142,7 +159,7 @@ class ReservationService
             throw new HttpException(409, 'Only pending or confirmed reservations can be modified');
         }
 
-        if (now()->diffInMinutes($reservation->thoi_gian, false) < 60) {
+        if (now()->diffInMinutes($reservation->thoi_gian, false) < self::MODIFY_CUTOFF_MINUTES) {
             throw new HttpException(409, 'Reservations can only be modified or cancelled at least 60 minutes before arrival');
         }
     }

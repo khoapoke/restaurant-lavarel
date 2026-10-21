@@ -909,3 +909,31 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
 }
 ```
 - **Ghi chú nghiệp vụ (Laravel):** Sử dụng Query Builder tổng hợp `DB::table('CHI_TIET_DON_HANG')->join('DON_HANG', ...)->selectRaw('SUM(so_luong) as totalSold, SUM(so_luong * don_gia) as revenue')->groupBy(...)` để đạt hiệu năng cao nhất trên SQL Server.
+
+---
+
+## PHẦN C: STAFF POS, BẾP (KDS) & BỔ SUNG VẬN HÀNH (ADR-019)
+
+> Middleware: `auth:sanctum`, `account.active`, `role:STAFF,ADMIN`. Chi tiết request/response: `restaurant-fe/docs/api/staff-pos.md`.
+
+| Chức năng | Method & URL |
+|-----------|-------------|
+| Sơ đồ bàn (phiên đang mở + `upcomingReservation`) | `GET /api/v1/staff/pos/tables` |
+| Mở phiên (`tableIds`, `guestCount`, `reservationId?`, header `Idempotency-Key`) | `POST /api/v1/staff/pos/sessions` |
+| Chi tiết phiên (kèm `reservation`) | `GET /api/v1/staff/pos/sessions/{sessionId}` |
+| Hủy phiên mở nhầm (`reason`) | `POST /api/v1/staff/pos/sessions/{session}/cancel` |
+| Tạo order / thêm, sửa, xóa món nháp / gửi bếp | `POST /sessions/{session}/orders`, `POST /orders/{order}/items`, `PATCH|DELETE /order-items/{item}`, `POST /orders/{order}/send-kitchen` |
+| Lập hóa đơn / mở lại để gọi thêm / đóng phiên | `POST /sessions/{session}/invoices`, `POST /sessions/{session}/reopen`, `POST /sessions/{session}/close` |
+| Thanh toán hóa đơn (`method`, `amount`, `transactionCode?`) | `POST /api/v1/staff/invoices/{invoice}/payments` |
+| Xác nhận vệ sinh xong | `POST /api/v1/staff/pos/tables/{table}/complete-cleaning` |
+| Bảng bếp / chuyển trạng thái món | `GET /api/v1/staff/kitchen/items`, `PATCH /api/v1/staff/kitchen/items/{item}/status` |
+
+### Bổ sung Admin
+- `POST /api/v1/admin/payments/{paymentId}/confirm` — xác nhận chuyển khoản thủ công (`transactionCode` bắt buộc 4–100 ký tự, `note` tùy chọn).
+- `GET /api/v1/admin/payments` nhận `method` theo tên enum (`CASH`, `BANK_TRANSFER_QR`) và `keyword`.
+- `GET /api/v1/admin/reservations` nhận `scope` (`upcoming` | `past` | `all`), trả `isSeated`.
+- `AdminOrderResource.availableActions` mô tả các thao tác hợp lệ; đơn `DINE_IN` chỉ do POS/KDS điều phối (409).
+- `PUT /api/v1/admin/tables/{tableId}`: `status` thủ công chỉ `AVAILABLE` | `CLEANING` | `MAINTENANCE`.
+
+### Webhook thanh toán
+- Header `X-Signature` = HMAC-SHA256 của raw body với `PAYMENT_WEBHOOK_SECRET`. 401 nếu sai chữ ký, 503 nếu chưa cấu hình (trừ `PAYMENT_WEBHOOK_ALLOW_UNSIGNED=true`), 422 nếu thiếu số tiền.

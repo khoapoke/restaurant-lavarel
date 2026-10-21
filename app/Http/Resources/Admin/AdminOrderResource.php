@@ -6,6 +6,8 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
 use App\Http\Resources\Customer\OrderItemResource;
 use App\Http\Resources\Customer\OrderPaymentResource;
 use Illuminate\Http\Request;
@@ -47,6 +49,45 @@ class AdminOrderResource extends JsonResource
             ]),
             'payment' => $this->whenLoaded('payment', fn () => $this->payment ? new OrderPaymentResource($this->payment) : null),
             'items' => $this->whenLoaded('dishes', fn () => OrderItemResource::collection($this->dishes)),
+            'availableActions' => $this->whenLoaded('payment', fn (): array => $this->availableActions()),
+        ];
+    }
+
+    /**
+     * @return array{nextStatus: ?string, nextFulfillmentStatus: ?string, canCancel: bool, awaitingQrPayment: bool, requiresRefund: bool}
+     */
+    private function availableActions(): array
+    {
+        $isDineIn = $this->loai_phuc_vu === FulfillmentType::DINE_IN;
+        $isQrUnpaid = $this->payment
+            && $this->payment->phuong_thuc === PaymentMethod::BANK_TRANSFER_QR
+            && $this->payment->trang_thai !== PaymentStatus::PAID;
+
+        $nextStatus = $isDineIn ? null : match ($this->trang_thai) {
+            OrderStatus::PENDING_CONFIRMATION => OrderStatus::CONFIRMED,
+            OrderStatus::CONFIRMED => OrderStatus::PREPARING,
+            OrderStatus::PREPARING => OrderStatus::READY,
+            default => null,
+        };
+
+        $nextFulfillment = (! $isDineIn && $this->trang_thai === OrderStatus::READY)
+            ? match ($this->trang_thai_giao_nhan) {
+                FulfillmentStatus::AWAITING_DRIVER => FulfillmentStatus::OUT_FOR_DELIVERY,
+                FulfillmentStatus::OUT_FOR_DELIVERY => FulfillmentStatus::DELIVERED,
+                FulfillmentStatus::AWAITING_CUSTOMER => FulfillmentStatus::COLLECTED,
+                default => null,
+            }
+        : null;
+
+        return [
+            'nextStatus' => $nextStatus?->name,
+            'nextFulfillmentStatus' => $nextFulfillment?->name,
+            'canCancel' => ! $isDineIn
+                && $this->trang_thai->canBeCancelledByAdmin()
+                && $this->trang_thai_giao_nhan !== FulfillmentStatus::OUT_FOR_DELIVERY,
+            'awaitingQrPayment' => (bool) $isQrUnpaid && $this->trang_thai !== OrderStatus::CANCELLED,
+            'requiresRefund' => $this->trang_thai === OrderStatus::CANCELLED
+                && $this->payment?->trang_thai === PaymentStatus::PAID,
         ];
     }
 }

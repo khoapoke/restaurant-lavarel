@@ -16,6 +16,17 @@ class PosSessionResource extends JsonResource
             'openedAt' => $this->mo_luc?->toIso8601String(),
             'closedAt' => $this->dong_luc?->toIso8601String(),
             'version' => (int) $this->phien_ban,
+            'cancelReason' => $this->ly_do_huy,
+            'reservation' => $this->whenLoaded('reservation', fn () => $this->reservation ? [
+                'reservationId' => (int) $this->reservation->ma_dat_ban,
+                'reservationTime' => $this->reservation->thoi_gian?->format('Y-m-d\TH:i:s'),
+                'guestCount' => (int) $this->reservation->so_luong_khach,
+                'status' => $this->reservation->trang_thai->name,
+                'note' => $this->reservation->ghi_chu,
+                'customerName' => $this->reservation->account?->userProfile?->ho_ten
+                    ?? $this->reservation->account?->ten_dang_nhap,
+                'customerPhone' => $this->reservation->account?->userProfile?->so_dien_thoai,
+            ] : null),
             'staff' => [
                 'accountId' => (int) $this->staff->ma_tai_khoan,
                 'username' => $this->staff->ten_dang_nhap,

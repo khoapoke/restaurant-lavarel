@@ -22,6 +22,12 @@ class KitchenItemResource extends JsonResource
             'status' => $this->trang_thai_bep->name,
             'imageUrl' => $this->dish?->hinh_anh,
             'orderedAt' => $this->order?->ngay_dat_hang?->toIso8601String(),
+            'orderStatus' => $this->order?->trang_thai?->name,
+            'channel' => $this->order?->kenh?->name,
+            'fulfillmentType' => $this->order?->loai_phuc_vu?->name,
+            'orderNote' => $this->order?->ghi_chu,
+            'recipientName' => $this->order?->ten_nguoi_nhan,
+            'scheduledAt' => $this->order?->thoi_gian_nhan_du_kien?->toIso8601String(),
         ];
     }
 }

@@ -5,9 +5,12 @@ namespace Database\Seeders;
 use App\Enums\AccountStatus;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
+use App\Enums\KitchenItemStatus;
+use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\PosSessionStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\RoleType;
 use App\Enums\TableStatus;
@@ -17,9 +20,11 @@ use App\Models\Category;
 use App\Models\DiningTable;
 use App\Models\Dish;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\Role;
+use App\Models\ServiceSession;
 use App\Models\UserProfile;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
@@ -472,16 +477,94 @@ class RestaurantSeeder extends Seeder
             'ma_giao_dich' => 'QR'.date('Ymd').'0002',
         ]);
 
+        // Đơn 3: Giao hàng QR đã thanh toán, bếp đang chế biến (hiển thị trên KDS)
+        $order3 = Order::create([
+            'ngay_dat_hang' => Carbon::now()->subMinutes(25),
+            'tong_tien' => 79000 + 45000,
+            'trang_thai' => OrderStatus::PREPARING,
+            'dia_chi_giao_hang' => '12 Nguyễn Thị Minh Khai, Quận 1, TP.HCM',
+            'ten_nguoi_nhan' => 'Lê Hoàng Hùng',
+            'so_dien_thoai_nhan' => '0923456789',
+            'ghi_chu' => 'Gọi trước khi đến 5 phút',
+            'loai_phuc_vu' => FulfillmentType::DELIVERY,
+            'trang_thai_giao_nhan' => FulfillmentStatus::PENDING,
+            'ma_tai_khoan' => $accKh1->ma_tai_khoan,
+        ]);
+
+        $order3->dishes()->attach([
+            $dishPhoBo->ma_mon_an => ['ten_mon_snapshot' => $dishPhoBo->ten_mon_an, 'so_luong' => 1, 'don_gia' => 79000, 'trang_thai_bep' => KitchenItemStatus::PREPARING->value],
+            $dishGoiCuon->ma_mon_an => ['ten_mon_snapshot' => $dishGoiCuon->ten_mon_an, 'so_luong' => 1, 'don_gia' => 45000, 'trang_thai_bep' => KitchenItemStatus::QUEUED->value],
+        ]);
+
+        Payment::create([
+            'so_tien' => 79000 + 45000,
+            'phuong_thuc' => PaymentMethod::BANK_TRANSFER_QR,
+            'trang_thai' => PaymentStatus::PAID,
+            'ma_don_hang' => $order3->ma_don_hang,
+            'ma_giao_dich' => 'FT'.Carbon::now()->format('ymd').'88231',
+            'log_callback' => json_encode(['source' => 'SEEDER', 'note' => 'Khách đã chuyển khoản qua VietQR'], JSON_UNESCAPED_UNICODE),
+        ]);
+
         // 10. Reservations (DAT_BAN)
-        // Phiếu đặt 1: kh1 đặt Bàn T03 vào ngày mai lúc 19:00 (CONFIRMED)
+        // Phiếu đặt 1: kh1 giữ Bàn T03 cho tối nay (CONFIRMED) — bàn hiển thị "Đã đặt" trên sơ đồ POS
+        $tonightReservationAt = Carbon::now()->addHours(3)->setMinute(0)->setSecond(0);
+        if (! $tonightReservationAt->isToday()) {
+            $tonightReservationAt = Carbon::tomorrow()->setTime(19, 0);
+        }
+
         Reservation::create([
-            'thoi_gian' => Carbon::tomorrow()->setTime(19, 0),
+            'thoi_gian' => $tonightReservationAt,
             'so_luong_khach' => 4,
             'trang_thai' => ReservationStatus::CONFIRMED,
             'ghi_chu' => 'Tiệc kỷ niệm ngày cưới, chuẩn bị thêm nến thơm và ly rượu vang',
             'ma_tai_khoan' => $accKh1->ma_tai_khoan,
             'ma_ban' => $table3->ma_ban,
         ]);
+        $table3->update([
+            'trang_thai' => $tonightReservationAt->isToday() ? TableStatus::RESERVED : TableStatus::AVAILABLE,
+        ]);
+
+        // Phiên POS đang phục vụ tại Bàn T04: có món đang nấu, món đã sẵn sàng và món nháp chưa gửi bếp
+        $session = ServiceSession::create([
+            'ma_nhan_vien' => $accStaff->ma_tai_khoan,
+            'so_luong_khach' => 3,
+            'trang_thai' => PosSessionStatus::OPEN,
+            'mo_luc' => Carbon::now()->subMinutes(35),
+            'phien_ban' => 3,
+            'idempotency_key' => 'seed-session-t04-0001',
+            'request_hash' => hash('sha256', 'seed-session-t04-0001'),
+        ]);
+        $session->tables()->attach($table4->ma_ban);
+        $table4->update(['trang_thai' => TableStatus::OCCUPIED]);
+
+        $posOrder = Order::create([
+            'ngay_dat_hang' => Carbon::now()->subMinutes(30),
+            'tong_tien' => (79000 * 2) + (38000 * 3) + 45000,
+            'trang_thai' => OrderStatus::PREPARING,
+            'ghi_chu' => 'Khách quen, ít đá',
+            'ma_tai_khoan' => $accStaff->ma_tai_khoan,
+            'ma_phien' => $session->ma_phien,
+            'kenh' => OrderChannel::POS,
+            'loai_phuc_vu' => FulfillmentType::DINE_IN,
+            'trang_thai_giao_nhan' => FulfillmentStatus::SERVING,
+            'phien_ban' => 3,
+        ]);
+
+        foreach ([
+            [$dishPhoBo, 2, KitchenItemStatus::PREPARING, 'Một tô không hành'],
+            [$dishTraDao, 3, KitchenItemStatus::READY, null],
+            [$dishGoiCuon, 1, KitchenItemStatus::DRAFT, null],
+        ] as [$dish, $quantity, $kitchenStatus, $note]) {
+            OrderItem::create([
+                'ma_don_hang' => $posOrder->ma_don_hang,
+                'ma_mon_an' => $dish->ma_mon_an,
+                'ten_mon_snapshot' => $dish->ten_mon_an,
+                'so_luong' => $quantity,
+                'don_gia' => $dish->gia_tien,
+                'ghi_chu' => $note,
+                'trang_thai_bep' => $kitchenStatus,
+            ]);
+        }
 
         // Phiếu đặt 2: kh2 đặt Bàn T02 vào 2 ngày tới lúc 18:30 (PENDING)
         Reservation::create([

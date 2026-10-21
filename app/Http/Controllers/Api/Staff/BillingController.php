@@ -26,6 +26,14 @@ class BillingController extends Controller
         return $this->successResponse(new InvoiceResource($invoice), 'Invoice ready', 201);
     }
 
+    public function reopen(ServiceSession $session): JsonResponse
+    {
+        return $this->successResponse(
+            new PosSessionResource($this->billingService->reopen($session)),
+            'Invoice voided. The session is open for more orders.'
+        );
+    }
+
     public function pay(CreatePaymentRequest $request, Invoice $invoice): JsonResponse
     {
         $this->billingService->pay($invoice, $request->validated());

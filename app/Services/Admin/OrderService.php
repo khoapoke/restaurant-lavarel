@@ -4,10 +4,12 @@ namespace App\Services\Admin;
 
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
+use App\Enums\KitchenItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
+use App\Models\OrderItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -38,7 +40,9 @@ class OrderService
         if (! empty($filters['keyword'])) {
             $keyword = trim((string) $filters['keyword']);
             $query->where(function ($nested) use ($keyword): void {
-                $nested->where('ma_don_hang', $keyword)
+                $nested->where('ma_don_hang', ltrim($keyword, '#'))
+                    ->orWhere('ten_nguoi_nhan', 'like', "%{$keyword}%")
+                    ->orWhere('so_dien_thoai_nhan', 'like', "%{$keyword}%")
                     ->orWhereHas('account', function ($accountQuery) use ($keyword): void {
                         $accountQuery->where('ten_dang_nhap', 'like', "%{$keyword}%")
                             ->orWhereHas('userProfile', fn ($profileQuery) => $profileQuery->where('ho_ten', 'like', "%{$keyword}%"));
@@ -65,6 +69,8 @@ class OrderService
             $target = $this->statusFromName($targetStatus);
             $current = $order->trang_thai;
 
+            $this->assertNotDineIn($order);
+
             if (! $current->canTransitionTo($target)) {
                 throw new HttpException(400, "Invalid status transition from {$current->name} to {$target->name}");
             }
@@ -75,6 +81,7 @@ class OrderService
             }
 
             $order->update($updates);
+            $this->syncKitchenItems($order, $target);
 
             return $this->getOrder($orderId);
         });
@@ -111,6 +118,9 @@ class OrderService
             }
 
             $order->update($updates);
+            if ($target->completesOrder()) {
+                $this->syncKitchenItems($order, OrderStatus::COMPLETED);
+            }
 
             return $this->getOrder($orderId);
         });
@@ -121,8 +131,14 @@ class OrderService
         return DB::transaction(function () use ($orderId, $reason): Order {
             $order = Order::query()->lockForUpdate()->findOrFail($orderId);
 
+            $this->assertNotDineIn($order);
+
             if (! $order->trang_thai->canBeCancelledByAdmin()) {
                 throw new HttpException(409, 'This order can no longer be cancelled');
+            }
+
+            if ($order->trang_thai_giao_nhan === FulfillmentStatus::OUT_FOR_DELIVERY) {
+                throw new HttpException(409, 'The driver is already delivering this order. Confirm delivery or contact the driver first.');
             }
 
             $existingNote = trim((string) $order->ghi_chu);
@@ -130,9 +146,40 @@ class OrderService
                 'trang_thai' => OrderStatus::CANCELLED,
                 'ghi_chu' => trim($existingNote."\n[HỦY] ".$reason),
             ]);
+            $this->syncKitchenItems($order, OrderStatus::CANCELLED);
 
             return $this->getOrder($orderId);
         });
+    }
+
+    private function assertNotDineIn(Order $order): void
+    {
+        if ($order->loai_phuc_vu === FulfillmentType::DINE_IN) {
+            throw new HttpException(409, 'Dine-in orders are managed by the POS session and kitchen board');
+        }
+    }
+
+    /**
+     * Mirror an order-level transition onto its kitchen items so the KDS stays truthful.
+     */
+    private function syncKitchenItems(Order $order, OrderStatus $orderStatus): void
+    {
+        $transitions = match ($orderStatus) {
+            OrderStatus::PREPARING => [[KitchenItemStatus::SENT, KitchenItemStatus::QUEUED], KitchenItemStatus::PREPARING],
+            OrderStatus::READY => [[KitchenItemStatus::SENT, KitchenItemStatus::QUEUED, KitchenItemStatus::PREPARING], KitchenItemStatus::READY],
+            OrderStatus::COMPLETED => [[KitchenItemStatus::SENT, KitchenItemStatus::QUEUED, KitchenItemStatus::PREPARING, KitchenItemStatus::READY], KitchenItemStatus::SERVED],
+            OrderStatus::CANCELLED => [[KitchenItemStatus::DRAFT, KitchenItemStatus::SENT, KitchenItemStatus::QUEUED, KitchenItemStatus::PREPARING, KitchenItemStatus::READY], KitchenItemStatus::CANCELLED],
+            default => null,
+        };
+
+        if (! $transitions) {
+            return;
+        }
+
+        [$fromStatuses, $toStatus] = $transitions;
+        OrderItem::where('ma_don_hang', $order->ma_don_hang)
+            ->whereIn('trang_thai_bep', array_map(fn (KitchenItemStatus $status) => $status->value, $fromStatuses))
+            ->update(['trang_thai_bep' => $toStatus->value]);
     }
 
     private function statusFromName(string $name): OrderStatus
