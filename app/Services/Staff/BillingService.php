@@ -11,20 +11,24 @@ use App\Enums\PaymentStatus;
 use App\Enums\PosSessionStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\TableStatus;
+use App\Enums\TableVisitStatus;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\ServiceSession;
+use App\Services\Dining\ServiceRequestService;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class BillingService
 {
-    public function createInvoice(ServiceSession $session): Invoice
+    public function __construct(private readonly ServiceRequestService $serviceRequests) {}
+
+    public function createInvoice(ServiceSession $session, ?int $staffId = null): Invoice
     {
-        return DB::transaction(function () use ($session) {
+        return DB::transaction(function () use ($session, $staffId) {
             $lockedSession = ServiceSession::lockForUpdate()->findOrFail($session->ma_phien);
             if (! in_array($lockedSession->trang_thai, [PosSessionStatus::OPEN, PosSessionStatus::AWAITING_PAYMENT], true)) {
                 throw new HttpException(409, 'This service session cannot be invoiced.');
@@ -69,6 +73,7 @@ class BillingService
                 'trang_thai' => PosSessionStatus::AWAITING_PAYMENT,
                 'phien_ban' => $lockedSession->phien_ban + 1,
             ]);
+            $this->serviceRequests->acknowledgePaymentRequests((int) $lockedSession->ma_phien, $staffId);
 
             return $invoice->load('payment');
         });
@@ -100,14 +105,14 @@ class BillingService
         });
     }
 
-    public function pay(Invoice $invoice, array $data): Payment
+    public function pay(Invoice $invoice, array $data, ?int $staffId = null): Payment
     {
         $existing = Payment::where('idempotency_key', $data['idempotencyKey'])->first();
         if ($existing) {
             return $existing;
         }
 
-        return DB::transaction(function () use ($invoice, $data) {
+        return DB::transaction(function () use ($invoice, $data, $staffId) {
             $lockedInvoice = Invoice::lockForUpdate()->findOrFail($invoice->ma_hoa_don);
             if ($lockedInvoice->trang_thai === InvoiceStatus::PAID) {
                 return $lockedInvoice->payment;
@@ -147,6 +152,7 @@ class BillingService
                 $payment = Payment::create([...$attributes, 'ma_don_hang' => $lockedInvoice->ma_don_hang]);
             }
             $lockedInvoice->update(['trang_thai' => InvoiceStatus::PAID, 'thanh_toan_luc' => now()]);
+            $this->serviceRequests->completePaymentRequests((int) $lockedInvoice->ma_phien, $staffId);
 
             return $payment;
         });
@@ -188,6 +194,7 @@ class BillingService
                 'phien_ban' => $lockedSession->phien_ban + 1,
             ]);
             $lockedSession->tables()->update(['trang_thai' => TableStatus::CLEANING->value]);
+            $this->serviceRequests->closeForSession((int) $lockedSession->ma_phien);
 
             $reservation = $lockedSession->ma_dat_ban
                 ? Reservation::lockForUpdate()->find($lockedSession->ma_dat_ban)
@@ -207,7 +214,10 @@ class BillingService
             'tables',
             'reservation.account.userProfile',
             'orders.items.dish',
+            'orders.items.tickets',
             'invoice.payment',
+            'serviceRequests' => fn ($query) => $query->orderByDesc('ma_yeu_cau')->limit(30),
+            'visits' => fn ($query) => $query->where('trang_thai', TableVisitStatus::ACTIVE->value),
         ])->findOrFail($sessionId);
     }
 }

@@ -26,6 +26,11 @@ class AdminTableResource extends JsonResource
             'status' => $status,
             'location' => $this->vi_tri,
             'reservationsCount' => (int) ($this->reservations_count ?? 0),
+            'qr' => [
+                'token' => $this->ma_qr,
+                'url' => $this->qrUrl(),
+                'issuedAt' => $this->ma_qr_tao_luc?->toIso8601String(),
+            ],
         ];
     }
 }

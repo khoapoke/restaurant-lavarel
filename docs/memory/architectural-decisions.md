@@ -230,3 +230,35 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - Thanh toán: `POST /admin/payments/{id}/confirm` để xác nhận chuyển khoản thủ công (lưu vết người xác nhận). Webhook bắt buộc HMAC-SHA256 (`PAYMENT_WEBHOOK_SECRET`), bắt buộc số tiền, idempotent, có transaction + khóa; tiền về cho đơn đã hủy ghi `PAID` kèm `requiresRefund`. Cấu hình VietQR chuyển sang `config('services.vietqr')` qua `VietQrService` (không gọi `env()` trong service).
   - `config('app.timezone')` mặc định `Asia/Ho_Chi_Minh` (`APP_TIMEZONE`). Dữ liệu cũ tạo khi chạy UTC sẽ hiển thị lệch 7 giờ (chỉ ảnh hưởng dữ liệu demo cũ).
   - Rate limit: đăng ký 10/phút, đăng nhập 20/phút, webhook 60/phút. Dashboard bổ sung cơ cấu doanh thu, tiền hoàn, việc cần xử lý.
+
+## ADR-020: Mộc Live Dining — gọi món QR tại bàn trên nền POS hiện có
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Cần một trải nghiệm trình diễn xuyên suốt: khách quét QR tại bàn, xin nhận bàn, gọi món, theo dõi bếp, gọi nhân viên và xem hóa đơn — không cần tài khoản, không tạo hệ thống đơn thứ hai và không mở rộng thêm module CRUD.
+- **Quyết định:**
+  - **Hai lớp token:** `BAN_AN.ma_qr` (40 ký tự ngẫu nhiên, có thể tạo lại) chỉ định danh bàn; `LUOT_KHACH_BAN` lưu SHA-256 của visit token 64 ký tự cho từng thiết bị, gắn với bàn và phiên. Không endpoint công khai nào nhận `tableId`/`sessionId`. Visit hết quyền thao tác khi phiên đóng/hủy.
+  - **Check-in là hàng đợi vận hành**, không phải CRUD: `PENDING → ACTIVE/REJECTED/CANCELLED/EXPIRED`. Chấp nhận luôn đi qua `PosSessionService::open` để giữ nguyên quy tắc đặt bàn, sức chứa và chống mở trùng phiên.
+  - **Lượt gọi món = `PHIEU_BEP`** (thêm `nguon`, `ma_luot`, `idempotency_key` unique, `request_hash`). Món QR nối vào đơn POS duy nhất của phiên với trạng thái `SENT`, nên KDS, hóa đơn, thanh toán, báo cáo dùng lại toàn bộ luồng ADR-019. Giá luôn lấy từ `MON_AN` và snapshot vào chi tiết đơn.
+  - **Yêu cầu phục vụ** (`YEU_CAU_PHUC_VU`): `NEW → ACKNOWLEDGED → COMPLETED/CANCELLED`, chống trùng + cooldown + rate limit; yêu cầu thanh toán được ưu tiên và tự đồng bộ theo vòng đời hóa đơn.
+  - Webhook nhận thêm nội dung `HD{invoiceId}` để thanh toán hóa đơn tại bàn qua `BillingService::pay`; không có thao tác nào phía khách đánh dấu đã trả tiền.
+  - Endpoint công khai có rate limit riêng (`dine-read/entry/order/service`) theo token bàn + thiết bị + IP. Lệnh `php artisan dining:demo` chỉ chạy ngoài production, chỉ đụng tới bàn demo.
+  - Schema mới chỉ gồm: `BAN_AN.ma_qr/ma_qr_tao_luc`, `LUOT_KHACH_BAN`, `YEU_CAU_PHUC_VU`, 4 cột của `PHIEU_BEP`, `CHI_TIET_DON_HANG.bep_cap_nhat_luc` (migration `2026_10_21_094545`, idempotent, có `down`).
+
+## ADR-021: Cập nhật live bằng polling thông minh thay vì WebSocket
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Dự án chưa cài Laravel Reverb/Pusher, `BROADCAST_CONNECTION=log`, `QUEUE_CONNECTION=sync`, chạy bằng `php artisan serve` + SQLite. Thêm WebSocket đòi hỏi tiến trình Reverb, cấu hình CORS/WS và hàng đợi — dễ hỏng khi demo trên máy khác.
+- **Quyết định:**
+  - **Dùng polling, không WebSocket.** Trang khách 2,5 giây, hàng đợi POS 3 giây, KDS 3 giây, sơ đồ bàn 8 giây, phiên POS 4 giây.
+  - API khách trả `version` (băm snapshot); client gửi `since=version`, server trả `{changed:false}` khi không đổi → không tải lại payload.
+  - Hook `useLivePolling` (frontend): chuỗi `setTimeout` nên không có request chồng nhau, `AbortController` khi unmount/refresh, giãn chu kỳ khi tab ẩn, đồng bộ ngay khi tab hiện lại/online, backoff 2× khi lỗi mạng với trạng thái `reconnecting/offline` hiển thị cho người dùng.
+  - Tài liệu và giao diện ghi rõ "đồng bộ mỗi N giây", không tuyên bố realtime WebSocket. Khi cần mở rộng có thể phát sự kiện Reverb từ các service hiện có mà không đổi API.
+
+## ADR-022: Mã bàn theo phiên, gửi món bền vững qua reload và giới hạn lệnh demo
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Review milestone Live Dining tái hiện ba lỗi: (1) `/join` công khai cấp visit mới cho bất kỳ ai cầm QR in cố định — kể cả khách bữa trước, không cần pass cũ — và nhánh nâng visit `PENDING` cho phép đặt sẵn yêu cầu rồi lọt vào phiên nhân viên mở tại POS; (2) frontend giữ `Idempotency-Key` trong bộ nhớ, mất phản hồi + reload khiến lần gửi lại mang key mới và backend (đúng thiết kế) tạo lượt thứ hai; (3) `dining:demo` hủy cả phiên ghép Bàn L01 với bàn thường, để bàn thường `OCCUPIED` mà không còn phiên.
+- **Quyết định:**
+  - **QR chỉ nhận diện bàn.** Mỗi phiên có `PHIEN_PHUC_VU.ma_tham_gia` (4 chữ số, sinh khi tạo phiên, đổi theo từng phiên, không mass-assign). Thiết bị chưa thuộc phiên — không pass, pass phiên cũ, hay yêu cầu `PENDING` — phải gửi đúng mã khi `join`; chỉ nhân viên chấp nhận check-in mới gắn thiết bị không cần mã. Thiết bị đã thuộc phiên dùng tiếp bình thường.
+  - Mã sai được đếm theo phiên (`so_lan_sai_ma`); đủ `DINE_JOIN_CODE_MAX_FAILURES` (5) thì khóa (`423`) đến khi nhân viên tạo mã mới (`POST /staff/live/sessions/{id}/join-code`). Request không kèm mã không bị tính là lần đoán. Kết hợp rate limit `dine-entry` 8/phút.
+  - Mã chỉ trả cho thiết bị đã ở trong phiên (`session.joinCode`) và cho nhân viên (POS). Khách trong bàn mời bạn bằng mã hoặc link `/dine/{token}#code=XXXX` (mã ở fragment nên không tới server/log và bị xóa khỏi URL ngay).
+  - **Gửi món bền vững:** trước khi gọi API, frontend ghi lượt (key + payload đã chốt + dấu vết thiết bị) vào `localStorage` và tách khỏi giỏ. Sau reload/tab khác, lượt treo được tự gửi lại đúng key và payload; backend trả lại lượt cũ (`created:false`) kể cả khi phiên đã sang `AWAITING_PAYMENT`. Chỉ xóa khi biết chắc: 2xx, 4xx nghiệp vụ (đã rollback → trả món về giỏ), hoặc 409 “key đã dùng với nội dung khác”. Lỗi mạng/5xx/429 giữ nguyên lượt.
+  - **Demo chỉ đụng bàn demo:** `LiveDiningDemoService` kiểm tra mọi phiên trước khi ghi; phiên nào có bàn khác Bàn L01 thì từ chối toàn bộ lệnh, không thay đổi gì.
+  - Migration bổ sung `2026_10_21_105139_add_join_code_to_phien_phuc_vu_table` (cấp mã cho phiên đang mở hiện có).

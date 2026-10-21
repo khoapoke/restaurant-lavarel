@@ -21,6 +21,10 @@ class KitchenController extends Controller
     {
         return $this->successResponse([
             'syncedAt' => now()->toIso8601String(),
+            'sla' => [
+                'warningMinutes' => (int) config('dining.kitchen.warning_minutes'),
+                'lateMinutes' => (int) config('dining.kitchen.late_minutes'),
+            ],
             'items' => KitchenItemResource::collection($this->kitchenService->activeItems()),
         ], 'Kitchen board retrieved successfully');
     }

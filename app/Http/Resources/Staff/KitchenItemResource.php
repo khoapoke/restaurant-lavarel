@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources\Staff;
 
+use App\Enums\KitchenTicketSource;
+use App\Enums\OrderChannel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -10,6 +12,9 @@ class KitchenItemResource extends JsonResource
     public function toArray(Request $request): array
     {
         $session = $this->order?->serviceSession;
+        $ticket = $this->relationLoaded('tickets') ? $this->tickets->first() : null;
+        $isOnline = $this->order && $this->order->kenh !== OrderChannel::POS;
+        $sentAt = $ticket?->gui_luc ?? $this->order?->ngay_dat_hang;
 
         return [
             'itemId' => (int) $this->ma_chi_tiet,
@@ -28,6 +33,10 @@ class KitchenItemResource extends JsonResource
             'orderNote' => $this->order?->ghi_chu,
             'recipientName' => $this->order?->ten_nguoi_nhan,
             'scheduledAt' => $this->order?->thoi_gian_nhan_du_kien?->toIso8601String(),
+            'source' => $isOnline ? 'ONLINE' : ($ticket?->nguon ?? KitchenTicketSource::POS)->name,
+            'ticketId' => $ticket ? (int) $ticket->ma_phieu_bep : null,
+            'sentAt' => $sentAt?->toIso8601String(),
+            'statusChangedAt' => $this->bep_cap_nhat_luc?->toIso8601String(),
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\KitchenTicketSource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -14,9 +15,9 @@ class KitchenTicket extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['ma_don_hang', 'ma_nhan_vien', 'trang_thai', 'gui_luc'];
+    protected $fillable = ['ma_don_hang', 'ma_nhan_vien', 'trang_thai', 'gui_luc', 'nguon', 'ma_luot', 'idempotency_key', 'request_hash'];
 
-    protected $casts = ['gui_luc' => 'datetime'];
+    protected $casts = ['gui_luc' => 'datetime', 'nguon' => KitchenTicketSource::class];
 
     public function order(): BelongsTo
     {
@@ -26,6 +27,11 @@ class KitchenTicket extends Model
     public function staff(): BelongsTo
     {
         return $this->belongsTo(Account::class, 'ma_nhan_vien', 'ma_tai_khoan');
+    }
+
+    public function visit(): BelongsTo
+    {
+        return $this->belongsTo(TableVisit::class, 'ma_luot', 'ma_luot');
     }
 
     public function items(): BelongsToMany

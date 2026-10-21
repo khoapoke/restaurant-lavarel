@@ -6,13 +6,16 @@ use App\Enums\KitchenItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\PosSessionStatus;
 use App\Enums\ReservationStatus;
+use App\Enums\ServiceRequestStatus;
 use App\Enums\TableStatus;
+use App\Enums\TableVisitStatus;
 use App\Models\Account;
 use App\Models\DiningTable;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Reservation;
 use App\Models\ServiceSession;
+use App\Services\Dining\ServiceRequestService;
 use App\Services\Shared\TableStatusSynchronizer;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +28,10 @@ class PosSessionService
         PosSessionStatus::AWAITING_PAYMENT,
     ];
 
-    public function __construct(private readonly TableStatusSynchronizer $tableStatusSynchronizer) {}
+    public function __construct(
+        private readonly TableStatusSynchronizer $tableStatusSynchronizer,
+        private readonly ServiceRequestService $serviceRequests,
+    ) {}
 
     public function getFloor(): Collection
     {
@@ -33,8 +39,18 @@ class PosSessionService
             ->with([
                 'serviceSessions' => function ($query): void {
                     $query->whereIn('PHIEN_PHUC_VU.trang_thai', $this->activeStatusValues())
-                        ->with(['staff.userProfile', 'reservation']);
+                        ->with([
+                            'staff.userProfile',
+                            'reservation.account.userProfile',
+                            'orders.items.tickets',
+                            'serviceRequests' => fn ($requests) => $requests->whereIn('trang_thai', ServiceRequestStatus::openValues()),
+                        ])
+                        ->withCount(['visits as connected_guests_count' => fn ($visits) => $visits->where('trang_thai', TableVisitStatus::ACTIVE->value)]);
                 },
+                'visits' => fn ($query) => $query
+                    ->where('trang_thai', TableVisitStatus::PENDING->value)
+                    ->where('tao_luc', '>=', now()->subMinutes((int) config('dining.check_in_expires_minutes', 15)))
+                    ->orderBy('tao_luc'),
                 'reservations' => function ($query): void {
                     $query->where('trang_thai', ReservationStatus::CONFIRMED->value)
                         ->whereBetween('thoi_gian', [
@@ -58,7 +74,10 @@ class PosSessionService
             'tables',
             'reservation.account.userProfile',
             'orders.items.dish',
+            'orders.items.tickets',
             'invoice.payment',
+            'serviceRequests' => fn ($query) => $query->orderByDesc('ma_yeu_cau')->limit(30),
+            'visits' => fn ($query) => $query->where('trang_thai', TableVisitStatus::ACTIVE->value),
         ])->findOrFail($sessionId);
     }
 
@@ -196,6 +215,8 @@ class PosSessionService
                 'ly_do_huy' => $reason,
                 'phien_ban' => $lockedSession->phien_ban + 1,
             ]);
+
+            $this->serviceRequests->closeForSession((int) $lockedSession->ma_phien);
 
             foreach ($lockedSession->tables as $table) {
                 $table->update(['trang_thai' => TableStatus::AVAILABLE]);

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class DiningTable extends Model
 {
@@ -23,10 +24,43 @@ class DiningTable extends Model
         'vi_tri',
     ];
 
+    /** The QR token is issued and rotated by the system only, never mass assigned. */
+    protected $hidden = ['ma_qr'];
+
     protected $casts = [
         'suc_chua' => 'integer',
         'trang_thai' => TableStatus::class,
+        'ma_qr_tao_luc' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (DiningTable $table): void {
+            if (empty($table->ma_qr)) {
+                $table->ma_qr = self::newQrToken();
+                $table->ma_qr_tao_luc = now();
+            }
+        });
+    }
+
+    public static function newQrToken(): string
+    {
+        return Str::random(40);
+    }
+
+    /** Public Live Dining link encoded in the table QR code. */
+    public function qrUrl(): ?string
+    {
+        return $this->ma_qr ? config('dining.frontend_url').'/dine/'.$this->ma_qr : null;
+    }
+
+    /** Issue a new public QR token; previously printed codes stop working immediately. */
+    public function rotateQrToken(): string
+    {
+        $this->forceFill(['ma_qr' => self::newQrToken(), 'ma_qr_tao_luc' => now()])->save();
+
+        return $this->ma_qr;
+    }
 
     // Accessors / Mutators
     protected function tableId(): Attribute
@@ -70,6 +104,11 @@ class DiningTable extends Model
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class, 'ma_ban', 'ma_ban');
+    }
+
+    public function visits(): HasMany
+    {
+        return $this->hasMany(TableVisit::class, 'ma_ban', 'ma_ban');
     }
 
     public function serviceSessions(): BelongsToMany

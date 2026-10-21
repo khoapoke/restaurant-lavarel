@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Staff;
 
+use App\Enums\KitchenTicketSource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -19,6 +20,9 @@ class PosOrderItemResource extends JsonResource
             'subTotal' => round((float) $this->don_gia * (int) $this->so_luong, 2),
             'note' => $this->ghi_chu,
             'kitchenStatus' => $this->trang_thai_bep->name,
+            'source' => $this->whenLoaded('tickets', fn () => ($this->tickets->first()?->nguon ?? KitchenTicketSource::POS)->name),
+            'sentAt' => $this->whenLoaded('tickets', fn () => $this->tickets->first()?->gui_luc?->toIso8601String()),
+            'statusChangedAt' => $this->bep_cap_nhat_luc?->toIso8601String(),
         ];
     }
 }

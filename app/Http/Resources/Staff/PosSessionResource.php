@@ -41,6 +41,24 @@ class PosSessionResource extends JsonResource
             ])->values(),
             'orders' => PosOrderResource::collection($this->whenLoaded('orders')),
             'invoice' => $this->whenLoaded('invoice', fn () => $this->invoice ? new InvoiceResource($this->invoice) : null),
+            'serviceRequests' => $this->whenLoaded('serviceRequests', fn () => $this->serviceRequests->map(fn ($serviceRequest) => [
+                'requestId' => (int) $serviceRequest->ma_yeu_cau,
+                'type' => $serviceRequest->loai->name,
+                'label' => $serviceRequest->loai->label(),
+                'isPriority' => $serviceRequest->loai->isPriority(),
+                'note' => $serviceRequest->ghi_chu,
+                'preferredMethod' => $serviceRequest->phuong_thuc_mong_muon?->name,
+                'status' => $serviceRequest->trang_thai->name,
+                'createdAt' => $serviceRequest->tao_luc?->toIso8601String(),
+                'acknowledgedAt' => $serviceRequest->nhan_luc?->toIso8601String(),
+                'completedAt' => $serviceRequest->hoan_thanh_luc?->toIso8601String(),
+            ])->values()),
+            'liveDining' => $this->whenLoaded('visits', fn () => [
+                'connectedGuests' => $this->visits->count(),
+                'joinCode' => $this->ma_tham_gia,
+                'joinCodeLocked' => $this->isJoinCodeLocked(),
+                'qrUrl' => $this->tables->first()?->qrUrl(),
+            ]),
         ];
     }
 }

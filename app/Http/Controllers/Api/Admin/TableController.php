@@ -40,4 +40,12 @@ class TableController extends Controller
             'Table updated successfully'
         );
     }
+
+    public function rotateQrToken(int $tableId): JsonResponse
+    {
+        return $this->successResponse(
+            new AdminTableResource($this->tableService->rotateQrToken($tableId)),
+            'Table QR code regenerated successfully'
+        );
+    }
 }

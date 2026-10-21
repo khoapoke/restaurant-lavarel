@@ -937,3 +937,77 @@ Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dự
 
 ### Webhook thanh toán
 - Header `X-Signature` = HMAC-SHA256 của raw body với `PAYMENT_WEBHOOK_SECRET`. 401 nếu sai chữ ký, 503 nếu chưa cấu hình (trừ `PAYMENT_WEBHOOK_ALLOW_UNSIGNED=true`), 422 nếu thiếu số tiền.
+
+---
+
+## PHẦN D: MỘC LIVE DINING — GỌI MÓN QR TẠI BÀN (ADR-020, ADR-021)
+
+> Luồng: **QR → Check-in → POS session → Order → KDS → Tracking → Service request → Invoice → Payment**.
+> Endpoint công khai không cần tài khoản. Bàn được nhận diện bằng `tableToken` (40 ký tự ngẫu nhiên, `BAN_AN.ma_qr`); mỗi thiết bị khách có một **visit token** 64 ký tự gửi trong header `X-Dine-Visit` (DB chỉ lưu SHA-256). Không có endpoint công khai nào nhận `tableId`/`sessionId` từ client.
+
+### D.1. Endpoint công khai (`/api/v1/public/dine/{tableToken}`)
+
+| Method & URL | Rate limit | Mô tả |
+| :--- | :--- | :--- |
+| `GET /public/dine/{tableToken}?since={version}` | `dine-read` 90/phút | Trạng thái live của bàn. Kèm `X-Dine-Visit` để xem phiên của mình. `since` trùng `version` → chỉ trả `{ changed: false, version, serverTime, sla }`. |
+| `POST /public/dine/{tableToken}/check-in` | `dine-entry` 8/phút | `{ guestName (1–40), guestCount (1–30) }` → `201 { visitToken, live }`. 409 nếu bàn đang phục vụ, đã có yêu cầu chờ, bàn bảo trì. |
+| `POST /public/dine/{tableToken}/check-in/cancel` | `dine-entry` | Khách tự hủy yêu cầu đang chờ (`PENDING`). |
+| `POST /public/dine/{tableToken}/join` | `dine-entry` | `{ joinCode (4 số), guestName? }`. Thiết bị đã thuộc phiên → `200` (không cần mã). Thiết bị mới/pass phiên cũ/yêu cầu `PENDING` → bắt buộc **mã bàn của phiên hiện tại** (ADR-022): đúng → `201` visit mới (hoặc `200` nâng `PENDING`); thiếu mã → 403 (không tính lần sai); sai → 403; sai đủ 5 lần → 423 đến khi nhân viên tạo mã mới. 409 nếu bàn chưa mở. |
+| `POST /public/dine/{tableToken}/orders` | `dine-order` 10/phút | Header bắt buộc `Idempotency-Key` (12–64, `[A-Za-z0-9_-]`). Body `{ items: [{ dishId, quantity (1–20), note (≤120) }] }` (≤20 dòng). **Không nhận giá**. `201 { round: { roundNumber, sentAt, itemCount, source: "TABLE_QR" }, created: true, live }`; gửi lại cùng key → `200 created:false`; cùng key khác nội dung → 409. |
+| `POST /public/dine/{tableToken}/service-requests` | `dine-service` 12/phút | `{ type: CALL_STAFF|WATER|CUTLERY|CLEAN_TABLE|PAYMENT|OTHER, note (bắt buộc với OTHER, ≤200), preferredMethod: CASH|BANK_TRANSFER_QR }`. Trùng loại đang mở → `200 created:false` (trả yêu cầu cũ). Vừa đóng < 30 giây → 429. |
+| `POST /public/dine/{tableToken}/service-requests/{requestId}/cancel` | `dine-service` | Chỉ yêu cầu của chính thiết bị và còn `NEW`. |
+
+**Mã lỗi chung:** 404 `This table QR code is invalid or has been replaced.` · 401 `Your table pass is missing or no longer valid. Scan the table QR code again.` · 409 `This table session has ended. ...` · 409 `Your bill is being prepared. ...` (phiên `AWAITING_PAYMENT`) · 409 `Dish '{name}' has just sold out` · 429 `Too Many Attempts.`
+
+**Response `GET` (rút gọn):**
+```json
+{
+  "success": true,
+  "data": {
+    "changed": true,
+    "version": "4f1c9a0b2d7e8c3a5b6f",
+    "serverTime": "2026-10-21T19:42:05+07:00",
+    "sla": { "warningMinutes": 10, "lateMinutes": 20 },
+    "table": { "tableName": "Bàn L01", "location": "Tầng 1 - ...", "capacity": 4, "status": "OCCUPIED", "inService": true },
+    "entry": { "hasActiveSession": true, "requiresJoinCode": false, "joinCodeLocked": false, "hasPendingCheckIn": false },
+    "visit": { "status": "ACTIVE", "guestName": "Chị Mai", "guestCount": 3, "rejectReason": null, "requestedAt": "...", "expiresAt": null, "isCurrentSession": true },
+    "session": { "status": "OPEN", "openedAt": "...", "closedAt": null, "guestCount": 3, "isCurrent": true, "canOrder": true, "canRequestService": true, "joinCode": "4821" },
+    "rounds": [
+      { "roundNumber": 1, "source": "TABLE_QR", "isMine": true, "sentAt": "...",
+        "items": [{ "lineId": 41, "dishName": "Phở bò đặc biệt", "imageUrl": "/images/menu/pho-bo.jpg", "quantity": 1, "unitPrice": 79000, "note": null, "status": "PREPARING", "statusChangedAt": "..." }] }
+    ],
+    "serviceRequests": [{ "requestId": 7, "type": "CALL_STAFF", "label": "Gọi nhân viên", "status": "ACKNOWLEDGED", "isMine": true, "canCancel": false, "createdAt": "...", "acknowledgedAt": "...", "completedAt": null }],
+    "invoice": { "invoiceNumber": "HD00012", "status": "OPEN", "lines": [{ "dishName": "Phở bò đặc biệt", "quantity": 1, "unitPrice": 79000, "subTotal": 79000 }], "subTotal": 79000, "discountTotal": 0, "totalAmount": 79000, "payment": null, "qr": { "qrImageUrl": "https://img.vietqr.io/...", "transferContent": "HD12 THANH TOAN", "accountName": "MOC DINING", "accountNo": "1029384756" } },
+    "summary": { "itemCount": 2, "inKitchenCount": 1, "readyCount": 0, "servedCount": 1, "subTotal": 148000 }
+  }
+}
+```
+Không trả `tableId`, `sessionId`, thông tin nhân viên hay dữ liệu khách khác. `session.joinCode` chỉ có khi thiết bị đã thuộc phiên hiện tại; thiết bị bên ngoài chỉ thấy `entry.requiresJoinCode`. Phiên đã đóng vẫn đọc được hóa đơn trong `DINE_VISIT_READABLE_HOURS` (mặc định 6 giờ).
+
+### D.2. Endpoint nhân viên (`auth:sanctum`, `account.active`, `role:STAFF,ADMIN`)
+
+| Method & URL | Mô tả |
+| :--- | :--- |
+| `GET /staff/live/queue` | `{ counts: { checkIns, newRequests, acknowledgedRequests, paymentRequests }, checkIns: [...], serviceRequests: [...] }`; yêu cầu thanh toán đứng đầu. |
+| `POST /staff/live/check-ins/{visitId}/accept` | `{ guestCount?, reservationId? }` → mở phiên qua `PosSessionService::open` (giữ nguyên kiểm tra giữ bàn đặt trước, sức chứa, một phiên mở mỗi bàn; idempotency `dine-check-in-{visitId}`). Nếu bàn đã có phiên thì gắn visit vào phiên đó. Trả `PosSessionResource`. |
+| `POST /staff/live/check-ins/{visitId}/reject` | `{ reason (3–255) }` — khách thấy lý do. |
+| `POST /staff/live/service-requests/{id}/acknowledge` | `NEW → ACKNOWLEDGED` (khách thấy "Nhân viên đang đến"). |
+| `POST /staff/live/service-requests/{id}/complete` | `NEW/ACKNOWLEDGED → COMPLETED`. |
+| `GET /staff/live/tables/{tableId}/qr` | `{ tableName, token, url, issuedAt }` để in/hiển thị mã QR. |
+| `POST /staff/live/sessions/{sessionId}/join-code` | Tạo mã bàn mới cho phiên đang mở, xóa khóa do nhập sai. Trả `PosSessionResource`. Mã cũng có trong `GET /staff/pos/tables` (`activeSession.joinCode`, `joinCodeLocked`) và `GET /staff/pos/sessions/{id}` (`liveDining.joinCode`, `joinCodeLocked`). |
+
+**Bổ sung vào API hiện có:**
+- `GET /staff/pos/tables`: mỗi bàn có `pendingCheckIn` và `activeSession.live` = `{ subTotal, itemCount, draftCount, pendingCount, readyCount, lateCount, oldestPendingSentAt, qrRounds, openRequests, newRequests, paymentRequested, connectedGuests }`, `activeSession.guestName`.
+- `GET /staff/pos/sessions/{id}`: thêm `serviceRequests` (30 gần nhất), `liveDining: { connectedGuests, qrUrl }`; mỗi món có `source` (`POS`/`TABLE_QR`), `sentAt`, `statusChangedAt`.
+- `GET /staff/kitchen/items`: thêm `sla { warningMinutes, lateMinutes }`; mỗi món có `source` (`POS`/`TABLE_QR`/`ONLINE`), `ticketId`, `sentAt`, `statusChangedAt`.
+- Lập hóa đơn tự chuyển yêu cầu `PAYMENT` đang `NEW` → `ACKNOWLEDGED`; thanh toán xong → `COMPLETED`; đóng/hủy phiên → yêu cầu còn mở `CANCELLED`.
+
+### D.3. Endpoint quản trị & webhook
+
+| Method & URL | Mô tả |
+| :--- | :--- |
+| `POST /admin/tables/{tableId}/qr-token` | Tạo lại mã QR; mã cũ trả 404 ngay, yêu cầu nhận bàn đang chờ của bàn → `EXPIRED`. `GET /admin/tables` trả `qr: { token, url, issuedAt }`. |
+| `POST /webhooks/payment-callback` | Ngoài `DH{orderId}`, nhận `HD{invoiceId}` (hoặc trường `invoiceId`) để thanh toán hóa đơn tại bàn qua `BillingService::pay` (HMAC bắt buộc, không đủ tiền → 400, idempotent theo mã giao dịch). |
+
+### D.4. Lệnh demo
+`php artisan dining:demo [--rotate] [--json]` — chỉ chạy khi không phải production và `LIVE_DINING_DEMO_ENABLED=true`. Tạo (nếu thiếu) bàn `config('dining.demo.table_name')` (mặc định `Bàn L01`), đóng phiên đã thanh toán hoặc hủy phiên chưa thanh toán của **riêng bàn đó**, hết hạn yêu cầu nhận bàn, đưa bàn về `AVAILABLE` và in link QR. Nếu một phiên đang ghép Bàn L01 với bàn khác, lệnh **từ chối và không thay đổi dữ liệu** (exit code 1).

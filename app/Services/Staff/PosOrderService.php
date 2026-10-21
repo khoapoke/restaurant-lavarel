@@ -5,6 +5,7 @@ namespace App\Services\Staff;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\KitchenItemStatus;
+use App\Enums\KitchenTicketSource;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PosSessionStatus;
@@ -140,10 +141,11 @@ class PosOrderService
                 'ma_nhan_vien' => $staff->ma_tai_khoan,
                 'trang_thai' => 'OPEN',
                 'gui_luc' => now(),
+                'nguon' => KitchenTicketSource::POS,
             ]);
             $ticket->items()->attach($items->pluck('ma_chi_tiet')->all());
             OrderItem::whereIn('ma_chi_tiet', $items->pluck('ma_chi_tiet'))
-                ->update(['trang_thai_bep' => KitchenItemStatus::SENT->value]);
+                ->update(['trang_thai_bep' => KitchenItemStatus::SENT->value, 'bep_cap_nhat_luc' => now()]);
             $lockedOrder->update([
                 'trang_thai' => OrderStatus::PREPARING,
                 'phien_ban' => $lockedOrder->phien_ban + 1,
@@ -156,7 +158,8 @@ class PosOrderService
         });
     }
 
-    private function recalculate(Order $order): void
+    /** Recompute the order total from its billable items (also used by Live Dining). */
+    public function recalculate(Order $order): void
     {
         $total = OrderItem::where('ma_don_hang', $order->ma_don_hang)
             ->whereNotIn('trang_thai_bep', [KitchenItemStatus::CANCELLED->value, KitchenItemStatus::REJECTED->value])

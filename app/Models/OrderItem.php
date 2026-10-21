@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\KitchenItemStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 
 class OrderItem extends Pivot
@@ -26,12 +27,14 @@ class OrderItem extends Pivot
         'ghi_chu',
         'trang_thai_bep',
         'client_request_id',
+        'bep_cap_nhat_luc',
     ];
 
     protected $casts = [
         'so_luong' => 'integer',
         'don_gia' => 'decimal:2',
         'trang_thai_bep' => KitchenItemStatus::class,
+        'bep_cap_nhat_luc' => 'datetime',
     ];
 
     // Accessors / Mutators
@@ -71,6 +74,18 @@ class OrderItem extends Pivot
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'ma_don_hang', 'ma_don_hang');
+    }
+
+    public function tickets(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            KitchenTicket::class,
+            'CHI_TIET_PHIEU_BEP',
+            'ma_chi_tiet',
+            'ma_phieu_bep',
+            'ma_chi_tiet',
+            'ma_phieu_bep'
+        );
     }
 
     public function dish(): BelongsTo

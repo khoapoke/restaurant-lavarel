@@ -12,6 +12,7 @@ use App\Models\ServiceSession;
 use App\Services\Staff\BillingService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class BillingController extends Controller
 {
@@ -19,9 +20,9 @@ class BillingController extends Controller
 
     public function __construct(private readonly BillingService $billingService) {}
 
-    public function createInvoice(ServiceSession $session): JsonResponse
+    public function createInvoice(Request $request, ServiceSession $session): JsonResponse
     {
-        $invoice = $this->billingService->createInvoice($session);
+        $invoice = $this->billingService->createInvoice($session, (int) $request->user()->ma_tai_khoan);
 
         return $this->successResponse(new InvoiceResource($invoice), 'Invoice ready', 201);
     }
@@ -36,7 +37,7 @@ class BillingController extends Controller
 
     public function pay(CreatePaymentRequest $request, Invoice $invoice): JsonResponse
     {
-        $this->billingService->pay($invoice, $request->validated());
+        $this->billingService->pay($invoice, $request->validated(), (int) $request->user()->ma_tai_khoan);
 
         return $this->successResponse(
             new InvoiceResource($invoice->fresh('payment')),

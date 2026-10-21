@@ -344,3 +344,35 @@ STEP 5: Chấm điểm độ phù hợp Thời tiết & Sắp xếp kết quả
         'recommendedDishes' => DishResource::collection($rankedDishes)
     ];
 ```
+
+---
+
+## 6. Mộc Live Dining — Gọi món QR tại bàn (`Services/Dining/*`)
+
+### 6.1. Token bàn và token thiết bị (`GuestAccessService`)
+- `BAN_AN.ma_qr`: `Str::random(40)` (≈238 bit), unique, sinh tự động khi tạo bàn, **không mass-assignable**; admin tạo lại bằng `rotateQrToken()` → mã cũ 404 ngay.
+- Visit token: `Str::random(64)` trả cho thiết bị đúng một lần; DB lưu `sha256` (`LUOT_KHACH_BAN.token_hash`, unique). Mọi truy vấn visit đều kèm `ma_ban` của bàn vừa quét → đổi URL sang bàn khác không dùng được token cũ (401/không thấy dữ liệu).
+- Visit chỉ thao tác được khi `trang_thai = ACTIVE` **và** `ma_phien` = phiên đang mở của bàn. Phiên kết thúc → visit chỉ còn quyền đọc hóa đơn trong `visit_readable_hours`.
+- Yêu cầu nhận bàn `PENDING` quá `check_in_expires_minutes` (15) coi như `EXPIRED`. Tối đa 30 thiết bị/phiên.
+- **Mã bàn theo phiên (ADR-022):** QR in cố định chỉ nhận diện bàn. Thiết bị chưa thuộc phiên (không pass, pass phiên cũ, hoặc yêu cầu `PENDING`) chỉ vào được khi gửi đúng `PHIEN_PHUC_VU.ma_tham_gia` (4 số, sinh mới cho mỗi phiên) hoặc khi nhân viên chấp nhận check-in. Khóa phiên + `hash_equals`; mỗi mã sai tăng `so_lan_sai_ma`, đủ 5 → 423 tới khi nhân viên tạo mã mới; thiếu mã không tính là lần sai. Mã chỉ hiển thị cho nhân viên và thiết bị đã trong phiên.
+
+### 6.2. Check-in (`CheckInService`)
+1. Khóa `BAN_AN` (`lockForUpdate`). Bàn `MAINTENANCE` → 409; bàn đã có phiên mở → 409 (khách dùng `join`); đã có yêu cầu `PENDING` còn hạn → 409. Số khách tối đa 2× sức chứa.
+2. Nhân viên chấp nhận: khóa visit → nếu bàn chưa có phiên thì gọi `PosSessionService::open` (idempotency `dine-check-in-{visitId}`) nên **vẫn áp dụng** giữ bàn đặt trước ±119 phút, sức chứa, một phiên mở/bàn; có thể truyền `reservationId` để liên kết lượt đặt. Nếu bàn đã có phiên (mở tay tại POS) thì gắn visit vào phiên đó.
+3. Từ chối bắt buộc lý do 3–255 ký tự; khách thấy lý do.
+
+### 6.3. Gửi món (`TableOrderService::submit`)
+- `request_hash = sha256(visitId + dòng món đã chuẩn hóa)`. Cùng `Idempotency-Key` + cùng hash → trả lượt cũ (`created:false`); khác hash hoặc khác visit → 409. Bắt `UniqueConstraintViolationException` khi hai request trùng key chạy song song.
+- Transaction: khóa phiên → kiểm tra visit gắn đúng phiên, phiên `OPEN` (`AWAITING_PAYMENT` → 409 mời gọi nhân viên) → lấy/tạo **đơn POS duy nhất của phiên** (`kenh=POS`, `DINE_IN`) → khóa `MON_AN`, kiểm tra hiển thị/còn bán/chưa xóa → tạo `CHI_TIET_DON_HANG` trạng thái `SENT` với `ten_mon_snapshot`, `don_gia = MON_AN.gia_tien` → tạo `PHIEU_BEP` (`nguon=TABLE_QR`, `ma_luot`, `ma_nhan_vien` = nhân viên phụ trách phiên) → đơn `PREPARING`, tính lại tổng.
+- Ghi chú được `strip_tags` + gộp khoảng trắng. Không có endpoint sửa/xóa món sau khi gửi; khách gọi lượt mới.
+- Kiểm tra replay (`findReplay`) chạy **trước** kiểm tra trạng thái phiên, nên gửi lại một lượt đã nhận luôn được xác nhận `created:false` (kể cả khi phiên đã `AWAITING_PAYMENT`), còn lượt mới thì bị chặn. Frontend lưu lượt đang gửi vào `localStorage` để reload/tab khác gửi lại đúng key và payload.
+- Lệnh demo từ chối toàn bộ (trước mọi thao tác ghi) nếu một phiên ghép Bàn L01 với bàn khác.
+
+### 6.4. Yêu cầu phục vụ (`ServiceRequestService`)
+- Vòng đời `NEW → ACKNOWLEDGED → COMPLETED`, khách hủy khi còn `NEW` (chỉ yêu cầu của chính thiết bị). Nhân viên được hoàn tất thẳng từ `NEW`.
+- Chống spam: cùng loại đang mở → trả yêu cầu cũ; cùng loại vừa đóng/hủy < `cooldown_seconds` (30) → 429; `OTHER` tối đa 3 yêu cầu mở, trùng nội dung → trả yêu cầu cũ; rate limit `dine-service`.
+- `PAYMENT` là ưu tiên (đứng đầu hàng đợi). Lập hóa đơn → `ACKNOWLEDGED`; thanh toán → `COMPLETED`; đóng/hủy phiên → mọi yêu cầu mở `CANCELLED`.
+
+### 6.5. Theo dõi trực tiếp (`LiveStateService`)
+- Snapshot chỉ chứa dữ liệu phiên của visit; `version` = 20 ký tự đầu SHA-256 của snapshot. Client gửi `since=version` để nhận `changed:false` khi không đổi.
+- Thời gian chờ tính từ `PHIEU_BEP.gui_luc`; `CHI_TIET_DON_HANG.bep_cap_nhat_luc` ghi lần đổi trạng thái bếp gần nhất. SLA: `KITCHEN_SLA_WARNING_MINUTES` (10), `KITCHEN_SLA_LATE_MINUTES` (20).

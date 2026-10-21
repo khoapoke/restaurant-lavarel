@@ -18,7 +18,10 @@ class OrderItemResource extends JsonResource
         $unitPrice = (float) ($this->pivot?->don_gia ?? $this->don_gia ?? $this->price ?? 0);
         $subTotal = round($quantity * $unitPrice, 2);
 
+        $lineId = $this->pivot?->ma_chi_tiet ?? $this->ma_chi_tiet ?? null;
+
         return [
+            'itemId' => $lineId !== null ? (int) $lineId : null,
             'dishId' => (int) ($this->dishId ?? $this->ma_mon_an),
             'dishName' => $this->dishName ?? $this->ten_mon_an,
             'quantity' => $quantity,

@@ -34,7 +34,7 @@ class PosFloorApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonCount(6, 'data.items')
+            ->assertJsonCount(7, 'data.items')
             ->assertJsonStructure([
                 'data' => [
                     'syncedAt',

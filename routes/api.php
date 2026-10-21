@@ -15,8 +15,12 @@ use App\Http\Controllers\Api\Customer\OrderController;
 use App\Http\Controllers\Api\Customer\PaymentController;
 use App\Http\Controllers\Api\Customer\ProfileController;
 use App\Http\Controllers\Api\Customer\ReservationController as CustomerReservationController;
+use App\Http\Controllers\Api\Dining\GuestOrderController;
+use App\Http\Controllers\Api\Dining\GuestServiceRequestController;
+use App\Http\Controllers\Api\Dining\GuestTableController;
 use App\Http\Controllers\Api\Staff\BillingController;
 use App\Http\Controllers\Api\Staff\KitchenController;
+use App\Http\Controllers\Api\Staff\LiveFloorController;
 use App\Http\Controllers\Api\Staff\PosOrderController;
 use App\Http\Controllers\Api\Staff\PosSessionController;
 use Illuminate\Http\Request;
@@ -85,6 +89,21 @@ Route::prefix('v1')->group(function () {
     // Webhooks nhận kết quả từ Cổng thanh toán (VietQR/SePay/PayOS)
     Route::post('/webhooks/payment-callback', [PaymentController::class, 'handleCallback'])->middleware('throttle:60,1');
 
+    // PHẦN D: MỘC LIVE DINING — public QR ordering at the table (ADR-020)
+    Route::prefix('public/dine/{tableToken}')
+        ->where(['tableToken' => '[A-Za-z0-9]{32,64}'])
+        ->group(function () {
+            Route::get('/', [GuestTableController::class, 'show'])->middleware('throttle:dine-read');
+            Route::post('/check-in', [GuestTableController::class, 'checkIn'])->middleware('throttle:dine-entry');
+            Route::post('/check-in/cancel', [GuestTableController::class, 'cancelCheckIn'])->middleware('throttle:dine-entry');
+            Route::post('/join', [GuestTableController::class, 'join'])->middleware('throttle:dine-entry');
+            Route::post('/orders', [GuestOrderController::class, 'store'])->middleware('throttle:dine-order');
+            Route::post('/service-requests', [GuestServiceRequestController::class, 'store'])->middleware('throttle:dine-service');
+            Route::post('/service-requests/{requestId}/cancel', [GuestServiceRequestController::class, 'cancel'])
+                ->whereNumber('requestId')
+                ->middleware('throttle:dine-service');
+        });
+
     // PHẦN B: STAFF POS APIS
     Route::prefix('staff/pos')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
         Route::get('/tables', [PosSessionController::class, 'floor']);
@@ -106,6 +125,15 @@ Route::prefix('v1')->group(function () {
         Route::get('/kitchen/items', [KitchenController::class, 'index']);
         Route::patch('/kitchen/items/{item}/status', [KitchenController::class, 'updateStatus']);
         Route::post('/invoices/{invoice}/payments', [BillingController::class, 'pay']);
+
+        // Live Dining queue: QR check-ins and service requests
+        Route::get('/live/queue', [LiveFloorController::class, 'queue']);
+        Route::post('/live/check-ins/{visit}/accept', [LiveFloorController::class, 'acceptCheckIn'])->whereNumber('visit');
+        Route::post('/live/check-ins/{visit}/reject', [LiveFloorController::class, 'rejectCheckIn'])->whereNumber('visit');
+        Route::post('/live/service-requests/{serviceRequest}/acknowledge', [LiveFloorController::class, 'acknowledge'])->whereNumber('serviceRequest');
+        Route::post('/live/service-requests/{serviceRequest}/complete', [LiveFloorController::class, 'complete'])->whereNumber('serviceRequest');
+        Route::get('/live/tables/{table}/qr', [LiveFloorController::class, 'tableQr'])->whereNumber('table');
+        Route::post('/live/sessions/{session}/join-code', [LiveFloorController::class, 'rotateJoinCode'])->whereNumber('session');
     });
 
     // PHẦN C: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
@@ -152,6 +180,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/tables', [AdminTableController::class, 'index']);
         Route::post('/tables', [AdminTableController::class, 'store']);
         Route::put('/tables/{tableId}', [AdminTableController::class, 'update'])->whereNumber('tableId');
+        Route::post('/tables/{tableId}/qr-token', [AdminTableController::class, 'rotateQrToken'])->whereNumber('tableId');
         Route::get('/reservations', [AdminReservationController::class, 'index']);
         Route::patch('/reservations/{reservationId}/status', [AdminReservationController::class, 'updateStatus'])->whereNumber('reservationId');
         Route::get('/reports/dashboard', [AdminReportController::class, 'dashboard']);

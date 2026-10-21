@@ -5,8 +5,10 @@ namespace App\Services\Admin;
 use App\Enums\PosSessionStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\TableStatus;
+use App\Enums\TableVisitStatus;
 use App\Models\DiningTable;
 use App\Models\ServiceSession;
+use App\Models\TableVisit;
 use App\Services\Shared\TableStatusSynchronizer;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -127,5 +129,27 @@ class TableService
         }
 
         throw new HttpException(422, 'Unknown table status');
+    }
+
+    /**
+     * Replace the table's public QR token. Old printed codes stop working and pending
+     * check-in requests made through them are expired.
+     */
+    public function rotateQrToken(int $tableId): DiningTable
+    {
+        return DB::transaction(function () use ($tableId): DiningTable {
+            $table = DiningTable::query()->lockForUpdate()->find($tableId);
+            if (! $table) {
+                throw new HttpException(404, 'Table not found');
+            }
+
+            $table->rotateQrToken();
+            TableVisit::query()
+                ->where('ma_ban', $table->ma_ban)
+                ->where('trang_thai', TableVisitStatus::PENDING->value)
+                ->update(['trang_thai' => TableVisitStatus::EXPIRED->value, 'xu_ly_luc' => now()]);
+
+            return $table->loadCount('reservations');
+        });
     }
 }

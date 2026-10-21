@@ -37,7 +37,7 @@ class KitchenService
             KitchenItemStatus::READY->value,
         ];
 
-        return OrderItem::with(['dish', 'order.serviceSession.tables'])
+        return OrderItem::with(['dish', 'order.serviceSession.tables', 'tickets'])
             ->where(function (Builder $query) use ($workingStatuses): void {
                 $query->where(function (Builder $working) use ($workingStatuses): void {
                     $working->whereIn('trang_thai_bep', $workingStatuses)
@@ -79,10 +79,10 @@ class KitchenService
                 throw new HttpException(409, "Invalid kitchen transition from {$lockedItem->trang_thai_bep->name} to {$target->name}.");
             }
 
-            $lockedItem->update(['trang_thai_bep' => $target]);
+            $lockedItem->update(['trang_thai_bep' => $target, 'bep_cap_nhat_luc' => now()]);
             $this->synchronizeOrder($order);
 
-            return $lockedItem->fresh(['dish', 'order.serviceSession.tables']);
+            return $lockedItem->fresh(['dish', 'order.serviceSession.tables', 'tickets']);
         });
     }
 

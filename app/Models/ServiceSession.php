@@ -30,13 +30,44 @@ class ServiceSession extends Model
         'request_hash',
     ];
 
+    /** The table code is issued by the system only (ADR-022), never mass assigned. */
+    protected $hidden = ['ma_tham_gia'];
+
     protected $casts = [
+        'so_lan_sai_ma' => 'integer',
         'so_luong_khach' => 'integer',
         'trang_thai' => PosSessionStatus::class,
         'mo_luc' => 'datetime',
         'dong_luc' => 'datetime',
         'phien_ban' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (ServiceSession $session): void {
+            if (empty($session->ma_tham_gia)) {
+                $session->ma_tham_gia = self::newJoinCode();
+            }
+        });
+    }
+
+    public static function newJoinCode(): string
+    {
+        return str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    /** Issue a fresh table code and clear the failed-attempt lock. */
+    public function rotateJoinCode(): string
+    {
+        $this->forceFill(['ma_tham_gia' => self::newJoinCode(), 'so_lan_sai_ma' => 0])->save();
+
+        return $this->ma_tham_gia;
+    }
+
+    public function isJoinCodeLocked(): bool
+    {
+        return $this->so_lan_sai_ma >= (int) config('dining.join_code.max_failures', 5);
+    }
 
     public function staff(): BelongsTo
     {
@@ -63,6 +94,16 @@ class ServiceSession extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class, 'ma_phien', 'ma_phien');
+    }
+
+    public function visits(): HasMany
+    {
+        return $this->hasMany(TableVisit::class, 'ma_phien', 'ma_phien');
+    }
+
+    public function serviceRequests(): HasMany
+    {
+        return $this->hasMany(ServiceRequest::class, 'ma_phien', 'ma_phien');
     }
 
     public function invoice(): HasOne

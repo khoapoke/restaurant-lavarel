@@ -212,6 +212,14 @@ class RestaurantSeeder extends Seeder
             'vi_tri' => 'Tầng 1 - Khu góc vườn (Đang sửa điện)',
         ]);
 
+        // Live Dining demo table (QR ordering), reset with `php artisan dining:demo`
+        DiningTable::create([
+            'ten_ban' => config('dining.demo.table_name'),
+            'suc_chua' => (int) config('dining.demo.table_capacity', 4),
+            'trang_thai' => TableStatus::AVAILABLE,
+            'vi_tri' => config('dining.demo.table_location'),
+        ]);
+
         // 6. Categories (DANH_MUC)
         $catKhaiVi = Category::create([
             'ten_danh_muc' => 'Khai vị',

@@ -2,18 +2,24 @@
 
 namespace App\Services\Customer;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Services\Payments\VietQrService;
+use App\Services\Staff\BillingService;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class PaymentService
 {
-    public function __construct(private readonly VietQrService $vietQrService) {}
+    public function __construct(
+        private readonly VietQrService $vietQrService,
+        private readonly BillingService $billingService,
+    ) {}
 
     /**
      * Generate VietQR payment code for order (PAY-01).
@@ -117,14 +123,19 @@ class PaymentService
     {
         $this->assertValidSignature($rawBody, $signature);
 
-        $orderId = $this->resolveOrderId($payload);
-        if (! $orderId) {
+        $paidAmount = $payload['amount'] ?? $payload['transferAmount'] ?? null;
+        $invoiceId = $this->resolveInvoiceId($payload);
+        $orderId = $invoiceId ? null : $this->resolveOrderId($payload);
+        if (! $orderId && ! $invoiceId) {
             throw new HttpException(400, 'Cannot identify order ID from webhook payload');
         }
 
-        $paidAmount = $payload['amount'] ?? $payload['transferAmount'] ?? null;
         if (! is_numeric($paidAmount) || (float) $paidAmount <= 0) {
             throw new HttpException(422, 'Webhook payload must include a positive paid amount');
+        }
+
+        if ($invoiceId) {
+            return $this->processInvoiceTransfer($invoiceId, (float) $paidAmount, $payload, $rawBody);
         }
 
         $result = DB::transaction(function () use ($orderId, $paidAmount, $payload): array {
@@ -200,6 +211,65 @@ class PaymentService
         if (! $signature || ! hash_equals($expected, strtolower(trim($signature)))) {
             throw new HttpException(401, 'Invalid webhook signature');
         }
+    }
+
+    /**
+     * A dine-in bill paid by bank transfer (content "HD{invoiceId} THANH TOAN") settles the
+     * POS invoice through the same billing path as staff, so Live Dining guests see it.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function processInvoiceTransfer(int $invoiceId, float $paidAmount, array $payload, string $rawBody): Payment
+    {
+        $invoice = Invoice::query()->with('payment')->find($invoiceId);
+        if (! $invoice) {
+            throw new HttpException(404, "Invoice #{$invoiceId} not found");
+        }
+
+        if ($invoice->trang_thai === InvoiceStatus::PAID && $invoice->payment) {
+            return $invoice->payment;
+        }
+
+        if ($invoice->trang_thai !== InvoiceStatus::OPEN) {
+            throw new HttpException(409, "Invoice #{$invoiceId} is not awaiting payment");
+        }
+
+        $expected = (float) $invoice->tong_thanh_toan;
+        if ($paidAmount + 0.001 < $expected) {
+            throw new HttpException(400, "Paid amount ({$paidAmount}) is less than invoice total ({$expected})");
+        }
+
+        $transactionCode = (string) ($payload['transactionCode'] ?? $payload['id'] ?? '');
+        $payment = $this->billingService->pay($invoice, [
+            'method' => 'BANK_TRANSFER_QR',
+            'amount' => $expected,
+            'transactionCode' => $transactionCode,
+            'idempotencyKey' => 'webhook-'.substr(hash('sha256', $transactionCode !== '' ? $transactionCode : $rawBody), 0, 40),
+        ]);
+
+        $payment->forceFill(['log_callback' => json_encode([
+            'source' => 'WEBHOOK',
+            'payload' => $payload,
+            'receivedAt' => now()->toIso8601String(),
+        ], JSON_UNESCAPED_UNICODE)])->save();
+
+        return $payment;
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function resolveInvoiceId(array $payload): ?int
+    {
+        if (! empty($payload['invoiceId']) && is_numeric($payload['invoiceId'])) {
+            return (int) $payload['invoiceId'];
+        }
+
+        foreach (['content', 'description'] as $field) {
+            if (! empty($payload[$field]) && preg_match('/(?<![A-Z])HD(\d+)/i', (string) $payload[$field], $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $payload */
