@@ -11,8 +11,6 @@ class CategoryService
 {
     /**
      * Get all active categories with dish count for Admin.
-     *
-     * @return Collection
      */
     public function getCategories(): Collection
     {
@@ -28,15 +26,13 @@ class CategoryService
     /**
      * Get category detail by ID.
      *
-     * @param int $categoryId
-     * @return Category
      * @throws HttpException
      */
     public function getCategoryDetail(int $categoryId): Category
     {
         $category = Category::where('da_xoa', false)->find($categoryId);
 
-        if (!$category) {
+        if (! $category) {
             throw new HttpException(404, 'Category not found');
         }
 
@@ -45,9 +41,6 @@ class CategoryService
 
     /**
      * Create a new category (MNU-09).
-     *
-     * @param array $data
-     * @return Category
      */
     public function createCategory(array $data): Category
     {
@@ -65,9 +58,6 @@ class CategoryService
     /**
      * Update an existing category (MNU-10).
      *
-     * @param int $categoryId
-     * @param array $data
-     * @return Category
      * @throws HttpException
      */
     public function updateCategory(int $categoryId, array $data): Category
@@ -95,9 +85,6 @@ class CategoryService
     /**
      * Update visibility (hide/show) of a category (MNU-11).
      *
-     * @param int $categoryId
-     * @param bool|null $isVisible
-     * @return Category
      * @throws HttpException
      */
     public function updateVisibility(int $categoryId, ?bool $isVisible = null): Category
@@ -107,7 +94,7 @@ class CategoryService
         if ($isVisible !== null) {
             $category->hien_thi = $isVisible;
         } else {
-            $category->hien_thi = !$category->hien_thi;
+            $category->hien_thi = ! $category->hien_thi;
         }
 
         $category->save();
@@ -119,8 +106,6 @@ class CategoryService
      * Soft delete a category (MNU-12).
      * Tuyệt đối không xóa vật lý để tránh vi phạm khóa ngoại trong MON_AN.
      *
-     * @param int $categoryId
-     * @return Category
      * @throws HttpException
      */
     public function deleteCategory(int $categoryId): Category
@@ -131,8 +116,8 @@ class CategoryService
         $category->hien_thi = false;
         $category->save();
 
-        // Tự động ẩn các món ăn thuộc danh mục bị xóa mềm
-        Dish::where('ma_danh_muc', $categoryId)->update(['hien_thi' => false]);
+        // Món thuộc danh mục bị xóa tự ẩn khỏi thực đơn qua Dish::publiclyListed(); cờ của từng
+        // món giữ nguyên để khôi phục danh mục không vô tình bật lại món đã tắt (MNU-01).
 
         return $category;
     }

@@ -18,11 +18,14 @@ use App\Http\Controllers\Api\Customer\ReservationController as CustomerReservati
 use App\Http\Controllers\Api\Dining\GuestOrderController;
 use App\Http\Controllers\Api\Dining\GuestServiceRequestController;
 use App\Http\Controllers\Api\Dining\GuestTableController;
+use App\Http\Controllers\Api\Staff\ApprovalController;
 use App\Http\Controllers\Api\Staff\BillingController;
+use App\Http\Controllers\Api\Staff\ItemCorrectionController;
 use App\Http\Controllers\Api\Staff\KitchenController;
 use App\Http\Controllers\Api\Staff\LiveFloorController;
 use App\Http\Controllers\Api\Staff\PosOrderController;
 use App\Http\Controllers\Api\Staff\PosSessionController;
+use App\Http\Controllers\Api\Staff\ReservationDeskController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -68,6 +71,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/checkout', [OrderController::class, 'checkout']);
                 Route::get('/{orderId}', [OrderController::class, 'show'])->whereNumber('orderId');
                 Route::post('/{orderId}/cancel', [OrderController::class, 'cancel'])->whereNumber('orderId');
+                Route::patch('/{orderId}/recipient', [OrderController::class, 'updateRecipient'])->whereNumber('orderId');
             });
 
             // A.4. Thanh toán QR (PAY-01 -> PAY-03)
@@ -118,12 +122,35 @@ Route::prefix('v1')->group(function () {
         Route::post('/sessions/{session}/invoices', [BillingController::class, 'createInvoice']);
         Route::post('/sessions/{session}/reopen', [BillingController::class, 'reopen']);
         Route::post('/sessions/{session}/close', [BillingController::class, 'close']);
+        Route::post('/sessions/{session}/write-off', [BillingController::class, 'writeOff'])->middleware('role:ADMIN');
+        Route::post('/sessions/{session}/finish-without-charge', [BillingController::class, 'finishWithoutCharge']);
+        Route::post('/reservations/{reservation}/extend', [ReservationDeskController::class, 'extend']);
+        Route::post('/reservations/{reservation}/no-show', [ReservationDeskController::class, 'noShow']);
         Route::post('/sessions/{session}/cancel', [PosSessionController::class, 'cancel']);
+        Route::get('/sessions/{session}/history', [PosSessionController::class, 'history']);
+        Route::patch('/sessions/{session}/guest-count', [PosSessionController::class, 'changeGuestCount']);
+        Route::post('/sessions/{session}/tables', [PosSessionController::class, 'changeTables']);
+
+        // Điều chỉnh món sau khi gửi bếp (ADR-024)
+        Route::post('/order-items/{item}/void', [ItemCorrectionController::class, 'void']);
+        Route::post('/order-items/{item}/waive', [ItemCorrectionController::class, 'waive']);
+        Route::post('/order-items/{item}/remake', [ItemCorrectionController::class, 'remake']);
+        Route::post('/order-items/{item}/exchange', [ItemCorrectionController::class, 'exchange']);
+        Route::post('/order-items/{item}/split', [ItemCorrectionController::class, 'split']);
     });
 
     Route::prefix('staff')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
         Route::get('/kitchen/items', [KitchenController::class, 'index']);
         Route::patch('/kitchen/items/{item}/status', [KitchenController::class, 'updateStatus']);
+        Route::post('/kitchen/items/{item}/reject', [ItemCorrectionController::class, 'reject']);
+        Route::post('/kitchen/items/{item}/undo', [ItemCorrectionController::class, 'undo']);
+
+        // Yêu cầu duyệt: STAFF gửi, ADMIN duyệt trên phiên của mình
+        Route::get('/approvals', [ApprovalController::class, 'index']);
+        Route::post('/approvals', [ApprovalController::class, 'store']);
+        Route::post('/approvals/{approval}/cancel', [ApprovalController::class, 'cancel']);
+        Route::post('/approvals/{approval}/approve', [ApprovalController::class, 'approve'])->middleware('role:ADMIN');
+        Route::post('/approvals/{approval}/reject', [ApprovalController::class, 'reject'])->middleware('role:ADMIN');
         Route::post('/invoices/{invoice}/payments', [BillingController::class, 'pay']);
 
         // Live Dining queue: QR check-ins and service requests
@@ -170,11 +197,17 @@ Route::prefix('v1')->group(function () {
         Route::patch('/orders/{orderId}/status', [AdminOrderController::class, 'updateStatus'])->whereNumber('orderId');
         Route::patch('/orders/{orderId}/fulfillment-status', [AdminOrderController::class, 'updateFulfillmentStatus'])->whereNumber('orderId');
         Route::post('/orders/{orderId}/cancel', [AdminOrderController::class, 'cancel'])->whereNumber('orderId');
+        Route::patch('/orders/{orderId}/recipient', [AdminOrderController::class, 'updateRecipient'])->whereNumber('orderId');
+        Route::get('/orders/{orderId}/history', [AdminOrderController::class, 'history'])->whereNumber('orderId');
         Route::get('/payments', [AdminPaymentController::class, 'index']);
         Route::post('/payments/reconcile', [AdminPaymentController::class, 'reconcile']);
         Route::get('/payments/callback-logs', [AdminPaymentController::class, 'callbackLogs']);
         Route::post('/payments/{paymentId}/refund', [AdminPaymentController::class, 'refund'])->whereNumber('paymentId');
         Route::post('/payments/{paymentId}/confirm', [AdminPaymentController::class, 'confirm'])->whereNumber('paymentId');
+        Route::get('/payments/transactions', [AdminPaymentController::class, 'transactions']);
+        Route::post('/payments/transactions/{transactionId}/refunds', [AdminPaymentController::class, 'refundTransaction'])->whereNumber('transactionId');
+        Route::post('/payments/transactions/{transactionId}/allocate', [AdminPaymentController::class, 'allocateTransaction'])->whereNumber('transactionId');
+        Route::post('/payments/transactions/{transactionId}/resolve', [AdminPaymentController::class, 'resolveTransaction'])->whereNumber('transactionId');
 
         // B.4. Bàn ăn, đặt bàn và báo cáo
         Route::get('/tables', [AdminTableController::class, 'index']);
@@ -183,6 +216,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/tables/{tableId}/qr-token', [AdminTableController::class, 'rotateQrToken'])->whereNumber('tableId');
         Route::get('/reservations', [AdminReservationController::class, 'index']);
         Route::patch('/reservations/{reservationId}/status', [AdminReservationController::class, 'updateStatus'])->whereNumber('reservationId');
+        Route::get('/reservations/{reservationId}', [AdminReservationController::class, 'show'])->whereNumber('reservationId');
+        Route::put('/reservations/{reservationId}', [AdminReservationController::class, 'update'])->whereNumber('reservationId');
+        Route::get('/reservations/{reservationId}/history', [AdminReservationController::class, 'history'])->whereNumber('reservationId');
         Route::get('/reports/dashboard', [AdminReportController::class, 'dashboard']);
     });
 

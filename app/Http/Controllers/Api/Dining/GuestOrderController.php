@@ -25,7 +25,13 @@ class GuestOrderController extends Controller
     {
         $table = $this->guestAccess->resolveTable($tableToken);
         $visit = $this->guestAccess->requireVisit($table, $request->header(GuestTableController::VISIT_HEADER));
-        $result = $this->tableOrders->submit($table, $visit, $request->validated('items'), $request->validated('idempotencyKey'));
+        $result = $this->tableOrders->submit(
+            $table,
+            $visit,
+            $request->validated('items'),
+            $request->validated('idempotencyKey'),
+            $request->filled('expectedTotal') ? (float) $request->validated('expectedTotal') : null
+        );
         $ticket = $result['ticket'];
 
         return $this->successResponse([

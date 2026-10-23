@@ -262,3 +262,98 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - **Gửi món bền vững:** trước khi gọi API, frontend ghi lượt (key + payload đã chốt + dấu vết thiết bị) vào `localStorage` và tách khỏi giỏ. Sau reload/tab khác, lượt treo được tự gửi lại đúng key và payload; backend trả lại lượt cũ (`created:false`) kể cả khi phiên đã sang `AWAITING_PAYMENT`. Chỉ xóa khi biết chắc: 2xx, 4xx nghiệp vụ (đã rollback → trả món về giỏ), hoặc 409 “key đã dùng với nội dung khác”. Lỗi mạng/5xx/429 giữ nguyên lượt.
   - **Demo chỉ đụng bàn demo:** `LiveDiningDemoService` kiểm tra mọi phiên trước khi ghi; phiên nào có bàn khác Bàn L01 thì từ chối toàn bộ lệnh, không thay đổi gì.
   - Migration bổ sung `2026_10_21_105139_add_join_code_to_phien_phuc_vu_table` (cấp mã cho phiên đang mở hiện có).
+
+## ADR-023: Sổ giao dịch tiền thật, phân bổ và ghi nhận hoàn tiền
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Kiểm toán 89 case (PAY-03/06/07/09/11/13/14/16) cho thấy `THANH_TOAN` 1–1 với đơn, không thời điểm, không người thao tác, `ma_giao_dich` không unique và `log_callback` bị ghi đè: tiền thứ hai, tiền dư, tiền cho hóa đơn cũ hoặc đơn đã hủy biến mất; báo cáo gom theo ngày đặt đơn.
+- **Quyết định:**
+  - **`GIAO_DICH_TIEN`**: mỗi khoản tiền thật một dòng (nguồn WEBHOOK/MANUAL/POS/COD/LEGACY, nhà cung cấp, tài khoản nhận, mã tham chiếu, số tiền, đã phân bổ, đã hoàn, nội dung, đích đơn/hóa đơn/phiên bản, `nhan_luc` ≠ `ghi_nhan_luc`, người ghi nhận, payload gốc, trạng thái đối soát `MATCHED/NEEDS_REVIEW/RESOLVED`, cờ `OVERPAID/UNDERPAID/DUPLICATE/ORDER_CANCELLED/INVOICE_STALE/SESSION_CLOSED/UNKNOWN_TARGET/NO_REFERENCE`). Khóa duy nhất `UPPER(provider|account|reference)` + `idempotency_key`.
+  - **`PHAN_BO_THANH_TOAN`**: áp tiền vào đơn/hóa đơn/phiên bản; dòng âm `REFUND_REVERSAL` khi hoàn phần đã áp. Đã thu của đơn = tổng phân bổ. Không phân bổ quá số còn thiếu; phần dư ở lại giao dịch (chưa phân bổ).
+  - **`HOAN_TIEN`**: ghi nhận đã hoàn (ADMIN, lý do, phương thức, mã chứng từ, thời điểm hoàn ≠ thời điểm ghi). Không vượt đã nhận − đã hoàn. Hệ thống không chuyển tiền thật.
+  - **`HOA_DON_PHIEN_BAN`** + `HOA_DON.phien_ban`: lập lại sau VOID tăng phiên bản; nội dung VietQR `HD{id}V{n} THANH TOAN`; `HD{id}` cũ chỉ khớp bản 1; không tái dùng bản VOID.
+  - `THANH_TOAN` thành **bản tổng hợp** (`so_tien_da_thu`, `so_tien_da_hoan`, `thanh_toan_luc`, trạng thái `PARTIALLY_PAID/PARTIALLY_REFUNDED`), luôn tính lại từ sổ (`PaymentLedgerService::syncOrderPayment`).
+  - Webhook có chữ ký luôn được **lưu** kể cả không áp được; trả 200 với `APPLIED/DUPLICATE_CALLBACK/RECORDED_FOR_REVIEW`. Xác nhận thủ công và POS gộp với callback cùng mã thay vì ghi trùng.
+  - Dung sai 0. Thu thiếu → thanh toán một phần, thu bù được (tiền mặt ≤ còn thiếu, `cashTendered` để tính tiền thối).
+  - Báo cáo tách: giá trị bán (ngày đặt), tiền nhận (ngày tiền về), hoàn (ngày hoàn), chưa phân bổ, phải hoàn, khách còn nợ, hủy/miễn/làm lại/thất thu, tiền cũ không rõ ngày. Khóa dashboard cũ giữ tương thích (`totalPaidRevenue` = tiền đã áp vào đơn bán).
+  - Backfill (migration `2026_10_21_121710`): mỗi thanh toán PAID/REFUNDED cũ → một giao dịch `LEGACY` + phân bổ; `nhan_luc` lấy từ `HOA_DON.thanh_toan_luc` nếu có, không thì để trống (báo cáo tách riêng); không bịa người/ngày, không nhân đôi số dư.
+
+## ADR-024: Sửa món sau khi gửi bếp, yêu cầu duyệt và nhật ký thao tác
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** KDS-01/02/03/04/05/07/11, SES-09, AUTH-03, AUD-01: món đã gửi không hủy được, bếp không từ chối được (phiên kẹt), không có làm lại/đổi/tách/hoàn tác, chỉ hai mức quyền, không có lịch sử thao tác.
+- **Quyết định:**
+  - `CHI_TIET_DON_HANG` thêm số phần tính tiền `so_luong_tinh_tien`, loại dòng `NORMAL/REMAKE/EXCHANGE` + dòng gốc, lý do hủy (enum + ghi chú), cờ miễn tiền, người/thời điểm hủy/miễn, trạng thái bếp trước đó và người cập nhật. Tiền dòng = đơn giá × số phần tính tiền; món thuộc hóa đơn khi số phần tính tiền > 0, kể cả đã hủy (khách đổi ý sau khi nấu).
+  - `ItemCorrectionService`: hủy (SENT/QUEUED: STAFF; đã nấu: chỉ ADMIN), miễn tiền (ADMIN), bếp từ chối (+ báo hết món), làm lại (giá 0, phiếu bếp mới), đổi món (tại bàn), tách dòng. Mọi thay đổi tính lại tổng, đồng bộ trạng thái đơn, lập lại hóa đơn mở (VOID bản cũ), đồng bộ sổ tiền. Hoàn tác bước bếp ≤ 120 giây nếu chưa có bước phụ thuộc.
+  - **`YEU_CAU_DUYET`** (`ITEM_VOID`, `SEAT_OUTSIDE_WINDOW`, `SESSION_WRITE_OFF`): STAFF gửi, ADMIN duyệt/từ chối bằng chính phiên đăng nhập; khi duyệt, thao tác chạy trong cùng transaction; lỗi nghiệp vụ giữ yêu cầu ở PENDING. Không có ô mật khẩu quản lý trên máy nhân viên.
+  - Thất thu: chỉ ADMIN; hóa đơn `WRITTEN_OFF`, phiên `CLOSED` với `kieu_ket_thuc=WRITE_OFF`, `so_tien_that_thu`, lý do, người duyệt; món chưa nấu tự hủy `NOT_SERVED`; không bao giờ ghi PAID.
+  - **`NHAT_KY_THAO_TAC`**: người, vai trò, thời điểm, hành động, đối tượng, lý do, trước/sau; lọc **đệ quy** khóa nhạy cảm (mật khẩu, token, chữ ký, mã bàn, QR). Chỉ đọc trong ứng dụng; xem theo phiên POS, đơn, lượt đặt.
+
+## ADR-025: Đặt bàn theo khoảng thời gian thật, giữ chỗ, nhận khách và điều chỉnh phiên
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** RSV-01→19, SES-02/04/05/06/08: hằng 119 phút dùng cho bốn mục đích, không có hết hạn/no-show/gia hạn, nhận khách bất kỳ giờ nào trong ngày, không đổi bàn/số khách, bàn đang có khách vẫn được đặt.
+- **Quyết định:**
+  - `ReservationSchedule` là nguồn duy nhất: thời lượng 90/120, dọn 15, nhận sớm 30, giữ 20, gia hạn ≤ 30, no-show tự động 60; PENDING hết hiệu lực tại giờ hẹn, CONFIRMED hết giữ chỗ sau hạn — kiểm tra trực tiếp ở API, không phụ thuộc lệnh quét.
+  - Phiên có `du_kien_ket_thuc_luc`; phiên quá giờ coi như chiếm thêm 60 phút khi tính bàn trống. Khách vãng lai được báo giờ phải trả bàn (lượt kế tiếp − 15 phút) và cần còn ≥ 30 phút.
+  - `DAT_BAN` thêm `ghi_chu_noi_bo` (chuyển dòng `[ADMIN]` cũ sang), gia hạn (đến, lý do, người), xử lý (lúc, người, lý do); trạng thái `EXPIRED`, `NO_SHOW`; `COMPLETED` chỉ từ đóng phiên.
+  - Mở phiên: cửa sổ nhận khách (ngoài cửa sổ: ADMIN + lý do), nhận ở bàn khác (lý do), ghép bàn, nhường bàn sau hạn giữ (ghi NO_SHOW + mở phiên trong một transaction). Phiên: đổi số khách, chuyển/ghép bàn (bàn cũ CLEANING/AVAILABLE/MAINTENANCE); thẻ QR đi theo phiên (`GuestAccessService::sessionCoversTable`, `movedTo`).
+  - Trùng lịch của cùng một khách so khoảng dùng bàn thuần (không cộng thời gian dọn).
+  - Lệnh `dining:reservations:sweep` mỗi 5 phút, `withoutOverlapping`.
+
+## ADR-026: Ngoại lệ giao hàng và tự đến lấy
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** DLV-01→10, KDS-12: đơn đang giao không thể thất bại/hủy, đổi CASH→QR làm đơn kẹt, không sửa người nhận, không mã nhận hàng, đơn hẹn xuống bếp ngay.
+- **Quyết định:**
+  - `DELIVERY_FAILED` (nguyên nhân enum + mô tả + thời điểm) → `AWAITING_DRIVER` (giao lại, đếm `so_lan_giao`) hoặc hủy. Tiền mặt chỉ ghi sổ (`COD`) khi bàn giao thành công.
+  - Hủy đơn lưu lý do/người/thời điểm và quyết định tiền `REFUND_DUE` (mặc định) / `RETAINED` (chỉ khi khách không đến lấy quá hạn hoặc từ chối/không liên lạc được). Đang giao phải ghi kết quả trước khi hủy.
+  - Sửa người nhận/địa chỉ đến trước khi giao tài xế (khách và admin, nhật ký trước/sau). Phương thức thanh toán khóa từ khi xác nhận.
+  - Tự lấy: `ma_nhan_hang` 4 số (sinh khi tạo đơn, không trả cho màn quản trị), bàn giao khi đúng mã hoặc SĐT, ghi người lấy hộ; giữ món 60 phút sau max(giờ sẵn sàng, giờ hẹn).
+  - Đơn hẹn: giờ hẹn trong giờ nhận đơn, ≤ 7 ngày; xuống KDS từ giờ hẹn − 30 phút; KDS có danh sách "sắp tới". Đặt ngay (ASAP) chỉ trong giờ nhận đơn.
+
+## ADR-027: Thực đơn nhất quán, xác nhận lại khi giá đổi, giờ nhận gọi món và ma trận quyền
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** MNU-01/02, QR-07, RSV-16, AUTH-02/03.
+- **Quyết định:**
+  - Món bán được khi món chưa xóa, đang hiện, còn bán **và** danh mục đang hiện, chưa xóa (`Dish::publiclyListed()`, `isOrderable()`), áp ở menu, giỏ, checkout, POS, QR. Ẩn/hiện/xóa danh mục không ghi đè cờ của từng món.
+  - Checkout và lượt QR gửi `expectedTotal`; lệch → 409 kèm `errors.reason=PRICE_CHANGED`, tổng mới và đơn giá mới (`DomainConflictException`). Lượt QR đã nhận vẫn được trả lại khi gửi lại cùng khóa (kiểm tra giá sau kiểm tra replay). Request không kèm `expectedTotal` vẫn được chấp nhận để tương thích (frontend luôn gửi).
+  - `OpeningHours`: gọi món mới 10:00–22:00 (POS gửi bếp, QR, mở phiên, đơn ASAP); giờ khách đến 10:00–21:30. Phiên đang mở vẫn thanh toán/đóng sau giờ.
+  - Ma trận quyền ở `docs/operations/exception-policies.md` §7, kiểm tra trong service/route (không chỉ ẩn nút).
+
+## ADR-028: Định danh chuyển khoản, bồi hoàn, gửi lại an toàn và các lối ra còn thiếu (review A–N)
+- **Ngày quyết định:** 2026-10-21
+- **Bối cảnh:** Review độc lập (A–N) tái hiện được 14 lỗi sau milestone ngoại lệ: cùng một khoản chuyển ghi hai lần
+  vì khóa dùng nhãn nguồn; webhook trỏ tới đích không tồn tại gây 500; ghi hoàn/thu tiền gửi lại bị ghi lặp;
+  hoàn một phần sau thanh toán làm POS kẹt; phiên mọi món bị từ chối không có lối đóng; API bếp bỏ qua giờ xuống bếp
+  của đơn hẹn; báo cáo món bán chạy đếm cả phần làm lại 0 ₫; gia hạn giữ chỗ không thấy khách vãng lai; quyền đọc
+  của khách sau chuyển bàn; cache gợi ý theo dị ứng; checkout QR mất modal; tương phản chữ trên nền rượu vang.
+- **Quyết định:**
+  - **Định danh chuyển khoản** (`App\Services\Payments\TransferIdentity`): `BANK:{ngân hàng}|{tài khoản nhận}|{mã}`.
+    Tài khoản đã cấu hình luôn quy về ngân hàng đã cấu hình; nhãn nguồn chung (`payments.generic_providers`) không
+    phải ngân hàng; bí danh ngân hàng chuẩn hóa qua `payments.bank_aliases`. Migration `2026_10_21_224546` tính lại
+    khóa cũ; dòng trùng sau chuẩn hóa giữ khóa `…#DUP{id}`, gắn `DUPLICATE`/`NEEDS_REVIEW` — **không gộp tiền tự động**.
+  - Đích đơn/hóa đơn của giao dịch chỉ được gán khi tồn tại; không thì `UNKNOWN_TARGET` (chứng từ không bao giờ mất).
+  - **Hoàn và bồi hoàn** (`HOAN_TIEN.loai_hoan`): `REFUND` ≤ phần nhà hàng đang nợ khách (`refundDue`); phần vượt trên
+    đơn còn hiệu lực chỉ được ghi dưới dạng `COMPENSATION`, cộng vào `DON_HANG.so_tien_giam_tru`; khoản phải thu =
+    `tong_tien − so_tien_giam_tru`. Chọn cách này thay vì để trạng thái thanh toán tụt về `PARTIALLY_PAID` khi hóa đơn
+    `PAID` (mâu thuẫn làm POS kẹt). Đây là thay đổi hợp đồng có chủ đích: request cũ không kèm `refundType` cho phần
+    vượt → 422 với thông báo hướng dẫn.
+  - **Gửi lại an toàn**: `HOAN_TIEN.khoa_yeu_cau` (từ `Idempotency-Key` hoặc chứng từ theo đơn/giao dịch) gom mọi dòng
+    của một yêu cầu; gửi lại cùng nội dung trả các dòng cũ, khác nội dung → 409. Thu tiền POS: cùng khóa khác nội dung
+    → 409; frontend lưu khóa + nội dung khoản đang gửi (localStorage), chỉ xóa khi có phản hồi nghiệp vụ.
+  - **Kết thúc phiên không tính tiền** (`POST /staff/pos/sessions/{id}/finish-without-charge`, `SessionEndType::NO_CHARGE`)
+    cho phiên mà mọi món đã xuống bếp đều bị hủy/từ chối: không tạo hóa đơn 0 ₫, không dùng thất thu (không có nợ).
+  - **Đơn hẹn giờ**: `Order::kitchenReleaseAt()`; API bếp 409 trước mốc; quản lý làm sớm qua cập nhật trạng thái đơn
+    với `reason` bắt buộc, nhật ký `ORDER_STARTED_EARLY`.
+  - Món bán chạy theo phần tính tiền (`billedAmount`), tách `preparedQuantity`/`freeQuantity`; gia hạn giữ chỗ từ chối
+    khi bàn có phiên chồng khoảng mới; quyền đọc của khách theo phiên chứa bàn; gợi ý chỉ cache thời tiết.
+- **Hệ quả:** Không còn trạng thái "hóa đơn PAID nhưng đơn còn thiếu". Đối soát thủ công cần xử lý các dòng
+  `#DUP` mà migration gắn cờ (DB dev có 8 dòng như vậy từ dữ liệu demo dùng lại một mã). Khóa dòng thật trên
+  MySQL/SQL Server chưa được kiểm (test chạy SQLite).
+
+### ADR-028 bổ sung (2026-10-23): ngân hàng nêu rõ thắng số tài khoản; hoàn tiền theo dòng chi tiết từng đơn
+- **Định danh:** nguồn nêu rõ ngân hàng (tên/alias/BIN) → dùng ngân hàng đó, kể cả khi dãy số tài khoản trùng tài
+  khoản cấu hình (khoản riêng, chuyển đối soát vì thông tin mâu thuẫn). Chỉ nguồn không nêu ngân hàng (nhập tay, POS,
+  nhãn VietQR) mới quy về tài khoản nhận đã cấu hình. Cùng mã tham chiếu ở định danh khác mà một bên không đủ
+  ngân hàng + tài khoản → không gộp đoán, ghi riêng, `NEEDS_REVIEW` kèm ghi chú.
+- **Hoàn tiền:** một yêu cầu hoàn gồm nhiều dòng `HOAN_TIEN` cùng `khoa_yeu_cau`: mỗi đơn bị rút tiền một dòng (gắn
+  dòng đảo phân bổ của đơn đó), phần tiền chưa phân bổ một dòng riêng. "Đã hoàn của đơn" = tổng dòng của đơn.
+  `PaymentLedgerService::refund()` trả về `Collection<Refund>`.
+- **Dữ liệu cũ:** migration mới `2026_10_23_090000` (không sửa migration đã chạy). `down()` không đảo dữ liệu.

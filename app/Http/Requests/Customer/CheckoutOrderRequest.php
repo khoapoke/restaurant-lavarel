@@ -32,7 +32,8 @@ class CheckoutOrderRequest extends FormRequest
             'recipientName' => ['required', 'string', 'max:100'],
             'recipientPhone' => ['required', 'string', 'regex:/^(0|\+84)[0-9]{9,10}$/'],
             'shippingAddress' => ['required_if:fulfillmentType,DELIVERY', 'nullable', 'string', 'max:255'],
-            'scheduledAt' => ['exclude_unless:fulfillmentType,PICKUP', 'nullable', 'date', 'after:now'],
+            'scheduledAt' => ['nullable', 'date', 'after:now'],
+            'expectedTotal' => ['nullable', 'numeric', 'min:0'],
             'paymentMethod' => ['required', 'string', 'in:CASH,BANK_TRANSFER_QR'],
             'orderNote' => ['nullable', 'string', 'max:255'],
         ];
@@ -52,7 +53,7 @@ class CheckoutOrderRequest extends FormRequest
             'recipientPhone.required' => 'Recipient phone is required.',
             'recipientPhone.regex' => 'The phone number format is invalid.',
             'shippingAddress.required_if' => 'Shipping address is required when fulfillment type is DELIVERY.',
-            'scheduledAt.after' => 'Scheduled pickup time must be in the future.',
+            'scheduledAt.after' => 'Scheduled time must be in the future.',
             'paymentMethod.required' => 'Payment method is required.',
             'paymentMethod.in' => 'The selected payment method is invalid. It must be CASH or BANK_TRANSFER_QR.',
         ];

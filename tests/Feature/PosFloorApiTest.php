@@ -15,6 +15,8 @@ class PosFloorApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Giờ cố định trong giờ nhận gọi món/đặt bàn (config/restaurant.php).
+        $this->travelTo(now()->setTime(12, 0));
         $this->seed(RestaurantSeeder::class);
     }
 

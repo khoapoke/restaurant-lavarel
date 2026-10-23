@@ -288,7 +288,9 @@ STEP 1: Lấy danh sách chất dị ứng của Khách hàng (USR-06)
     END IF
 
 STEP 2: Truy vấn dữ liệu Thời tiết từ OpenWeatherMap API (Có Cache 15 phút)
-    SET $cacheKey = "weather_" . round($lat, 2) . "_" . round($lon, 2);
+    // Chỉ cache dữ liệu thời tiết. Danh sách gợi ý dựng lại mỗi lần với dị ứng hiện tại của hồ sơ và
+    // thực đơn hiện tại (món/danh mục ẩn, hết bán) — không cache kết quả đã lọc theo dị ứng.
+    SET $cacheKey = "weather_data_" . round($lat, 2) . "_" . round($lon, 2);
     FETCH $weather = Cache::remember($cacheKey, 900, function () use ($lat, $lon) {
         RETURN Http::timeout(3)->get('https://api.openweathermap.org/data/2.5/weather', [
             'lat'   => $lat,
@@ -352,7 +354,7 @@ STEP 5: Chấm điểm độ phù hợp Thời tiết & Sắp xếp kết quả
 ### 6.1. Token bàn và token thiết bị (`GuestAccessService`)
 - `BAN_AN.ma_qr`: `Str::random(40)` (≈238 bit), unique, sinh tự động khi tạo bàn, **không mass-assignable**; admin tạo lại bằng `rotateQrToken()` → mã cũ 404 ngay.
 - Visit token: `Str::random(64)` trả cho thiết bị đúng một lần; DB lưu `sha256` (`LUOT_KHACH_BAN.token_hash`, unique). Mọi truy vấn visit đều kèm `ma_ban` của bàn vừa quét → đổi URL sang bàn khác không dùng được token cũ (401/không thấy dữ liệu).
-- Visit chỉ thao tác được khi `trang_thai = ACTIVE` **và** `ma_phien` = phiên đang mở của bàn. Phiên kết thúc → visit chỉ còn quyền đọc hóa đơn trong `visit_readable_hours`.
+- Visit chỉ thao tác được khi `trang_thai = ACTIVE` **và** `ma_phien` = phiên đang mở của bàn. Phiên kết thúc → visit chỉ còn quyền đọc hóa đơn trong `visit_readable_hours`. Phiên đã chuyển/ghép bàn: quyền (kể cả quyền đọc sau khi đóng) xét theo phiên của visit có chứa bàn đang quét, không chỉ bàn quét ban đầu; không bao giờ mở sang phiên mới của bàn.
 - Yêu cầu nhận bàn `PENDING` quá `check_in_expires_minutes` (15) coi như `EXPIRED`. Tối đa 30 thiết bị/phiên.
 - **Mã bàn theo phiên (ADR-022):** QR in cố định chỉ nhận diện bàn. Thiết bị chưa thuộc phiên (không pass, pass phiên cũ, hoặc yêu cầu `PENDING`) chỉ vào được khi gửi đúng `PHIEN_PHUC_VU.ma_tham_gia` (4 số, sinh mới cho mỗi phiên) hoặc khi nhân viên chấp nhận check-in. Khóa phiên + `hash_equals`; mỗi mã sai tăng `so_lan_sai_ma`, đủ 5 → 423 tới khi nhân viên tạo mã mới; thiếu mã không tính là lần sai. Mã chỉ hiển thị cho nhân viên và thiết bị đã trong phiên.
 
@@ -376,3 +378,47 @@ STEP 5: Chấm điểm độ phù hợp Thời tiết & Sắp xếp kết quả
 ### 6.5. Theo dõi trực tiếp (`LiveStateService`)
 - Snapshot chỉ chứa dữ liệu phiên của visit; `version` = 20 ký tự đầu SHA-256 của snapshot. Client gửi `since=version` để nhận `changed:false` khi không đổi.
 - Thời gian chờ tính từ `PHIEU_BEP.gui_luc`; `CHI_TIET_DON_HANG.bep_cap_nhat_luc` ghi lần đổi trạng thái bếp gần nhất. SLA: `KITCHEN_SLA_WARNING_MINUTES` (10), `KITCHEN_SLA_LATE_MINUTES` (20).
+
+
+## 7. Ngoại lệ nghiệp vụ (ADR-023 → ADR-028, 2026-10-21)
+
+Chính sách đầy đủ và các con số cấu hình: `docs/operations/exception-policies.md`. Ánh xạ 89 case: `docs/reviews/business-edge-case-mapping.md`.
+
+### 7.1. Sổ tiền (`PaymentLedgerService`)
+- Mọi khoản tiền thật ghi vào `GIAO_DICH_TIEN` trước khi áp. Chuyển khoản: khóa duy nhất `BANK:{ngân hàng}|{tài khoản nhận}|{MÃ}` (`TransferIdentity`, ADR-028) — ngân hàng nêu rõ (tên/alias/BIN) luôn được dùng, không suy ra từ số tài khoản; nguồn không nêu ngân hàng (nhãn chung `VIETQR`, `MANUAL`, `POS`…) với tài khoản trống/trùng tài khoản cấu hình → tài khoản nhận đã cấu hình; nêu ngân hàng cấu hình mà thiếu số tài khoản → tài khoản cấu hình. Dãy số trùng tài khoản cấu hình ở ngân hàng khác, hoặc cùng mã ở định danh khác mà một bên thiếu ngân hàng/tài khoản → ghi riêng, `NEEDS_REVIEW` kèm ghi chú. Tiền mặt/khác: `NHÀ_CUNG_CẤP|tài_khoản|mã`. Cùng khóa → trả lại giao dịch cũ (callback trùng, xác nhận tay sau webhook không tạo thêm tiền).
+- Đích đơn/hóa đơn chỉ gán khi tồn tại; không → `UNKNOWN_TARGET`, `NEEDS_REVIEW`. Ghi tay khoản mới cho đơn đã đủ tiền: ghi nhận, cờ `DUPLICATE`.
+- Áp vào đơn: `min(chưa phân bổ, còn thiếu)`; đơn đã hủy → cờ `ORDER_CANCELLED`; đơn đủ tiền → cờ `DUPLICATE`; còn dư → cờ `OVERPAID`, giao dịch `NEEDS_REVIEW`.
+- `phải thu = tổng đơn − giảm trừ (so_tien_giam_tru)`. `chưa phân bổ = số tiền − đã phân bổ (ròng) − đã hoàn`. `đã thu của đơn = Σ phân bổ`. `còn thiếu = max(0, phải thu − đã thu)` (đơn hủy: 0). `phải hoàn = đơn hủy ? (RETAINED ? 0 : đã thu) : max(0, đã thu − phải thu)`.
+- Trạng thái tổng hợp `THANH_TOAN`: chưa thu → `UNPAID`; đã thu 0 và có hoàn → `REFUNDED`; đơn hủy có hoàn → `PARTIALLY_REFUNDED`; đã thu ≥ phải thu và có bồi hoàn → `PARTIALLY_REFUNDED`; đã thu ≥ phải thu → `PAID`; còn lại `PARTIALLY_PAID`.
+- POS: tiền mặt ≤ còn thiếu (phần khách đưa dư là tiền thối, gửi `cashTendered`); chuyển khoản bắt buộc mã ≥ 6 ký tự; mã đã được webhook ghi → gộp, không ghi trùng; mã đã áp cho đơn khác → 409. Cùng `Idempotency-Key` khác số tiền/hình thức/hóa đơn → 409. Đóng phiên khi còn thiếu = 0.
+- Hoàn tiền (ADMIN): số tiền > 0, ≤ đã nhận − đã hoàn của giao dịch/đơn; lý do ≥ 5 ký tự, phương thức, mã chứng từ, thời điểm hoàn ≤ hiện tại. Loại `REFUND` ≤ phải hoàn; phần vượt trên đơn còn hiệu lực chỉ được ghi là `COMPENSATION` (422 nếu không chọn) và cộng vào `so_tien_giam_tru`.
+- Một yêu cầu hoàn = nhiều dòng `HOAN_TIEN` cùng `khoa_yeu_cau`: mỗi đơn bị rút tiền một dòng (`so_tien_tu_phan_bo = so_tien`, nối dòng đảo `PHAN_BO_THANH_TOAN.ma_hoan_tien`), phần tiền chưa phân bổ một dòng (`so_tien_tu_phan_bo = 0`, đơn đích của giao dịch). `đã hoàn của đơn = Σ HOAN_TIEN.so_tien` theo đơn.
+- Gửi lại hoàn tiền: khóa yêu cầu = `KEY:{Idempotency-Key}` hoặc `VOUCHER:O{đơn}|{chứng từ}` / `VOUCHER:T{giao dịch}|{chứng từ}`; cùng khóa cùng số tiền + hình thức → trả các dòng đã ghi; khác → 409.
+- Báo cáo: giá trị bán (đã trừ bồi hoàn) theo ngày đặt; tiền nhận theo `nhan_luc`; hoàn theo `hoan_luc`; tiền cũ không rõ ngày tách riêng. Món bán chạy: số phần tính tiền và `billedAmount`; dòng làm lại/miễn/hủy không cộng doanh thu (tách `preparedQuantity`, `freeQuantity`).
+
+### 7.2. Món & bếp (`ItemCorrectionService`, `KitchenService`)
+- Hủy: SENT/QUEUED → STAFF, lý do bắt buộc, số phần tính tiền giảm tương ứng. PREPARING/READY/SERVED → chỉ ADMIN (STAFF 403, gửi `ITEM_VOID`). Lý do thuộc lỗi nhà hàng (`ORDER_ENTRY_ERROR`, `OUT_OF_STOCK`, `RESTAURANT_MISTAKE`, `DAMAGED`, `NOT_SERVED`) → không tính tiền; `CUSTOMER_CHANGED_MIND` sau khi nấu → vẫn tính trừ khi ADMIN miễn (`waive`).
+- Món thuộc hóa đơn khi số phần tính tiền > 0, kể cả đã hủy; phiên có món như vậy không được hủy.
+- Bếp từ chối: SENT/QUEUED/PREPARING, lý do `OUT_OF_STOCK|RESTAURANT_MISTAKE|DAMAGED`, tùy chọn báo hết món (`con_ban=false`).
+- Làm lại: chỉ món READY/SERVED/CANCELLED/REJECTED, lý do lỗi nhà hàng; dòng mới REMAKE giá 0, phiếu bếp mới. Đổi món: chỉ tại bàn. Tách: 1 ≤ phần tách < số phần.
+- Hoàn tác: chỉ bước vừa bấm, trong 120 giây, khi trạng thái chưa đổi tiếp.
+- Đơn online hẹn giờ: `kitchenReleaseAt = giờ hẹn − scheduled_prep_lead_minutes`. Trước mốc: KDS không hiện, API bếp từ chối chuyển trạng thái (409); chỉ quản lý cho làm sớm qua `PATCH /admin/orders/{id}/status` kèm `reason` (ghi `ORDER_STARTED_EARLY`).
+- Phiên mà mọi món đã xuống bếp đều bị hủy/từ chối (0 phần tính tiền), không nháp, không hóa đơn còn hiệu lực, chưa nhận tiền → `finish-without-charge` (lý do), `kieu_ket_thuc = NO_CHARGE`.
+- Mọi thay đổi trên hóa đơn mở → VOID bản hiện tại, lập bản mới; hóa đơn đã PAID giữ nguyên và hiện "phải hoàn".
+
+### 7.3. Đặt bàn & phiên (`ReservationSchedule`, `ReservationDeskService`, `PosSessionService`)
+- Giờ đến ∈ [10:00, 21:30]; báo trước 30 phút (120 phút với yêu cầu đặc biệt, chỉ xét ghi chú của khách); ≤ 3 lượt tương lai/tài khoản, không chồng giờ của chính khách.
+- Bàn trống khi không có lượt PENDING (chưa tới giờ)/CONFIRMED (còn giữ chỗ) chồng `[bắt đầu, kết thúc + 15)` và không có phiên chiếm tới giờ dự kiến (quá giờ: + 60 phút).
+- Nhận khách: [giờ hẹn − 30, hạn giữ chỗ]; ngoài khung chỉ ADMIN + `overrideReason`; bàn khác cần `relocationReason`; số khách ≤ tổng sức chứa các bàn; `releaseReservationId` chỉ khi lượt đó đã quá hạn giữ chỗ.
+- Gia hạn: 5–30 phút, lý do, cộng dồn tới hạn gốc + 30, không chồng lượt kế tiếp, không chồng phiên đang chiếm bàn (khách vãng lai đã được nhường bàn), chưa quá mốc tự động no-show. Không đến: chỉ sau hạn giữ chỗ.
+- Admin: hủy/từ chối bắt buộc lý do; `COMPLETED` không bấm tay; sửa lượt đặt kiểm tra giờ, bàn bảo trì, sức chứa, trùng lịch.
+- Đổi số khách: 1 ≤ số khách ≤ sức chứa. Chuyển/ghép bàn: bàn mới AVAILABLE/RESERVED, không thuộc phiên khác, không trùng lượt đặt trong thời gian phiên còn chiếm, đủ chỗ; lý do bắt buộc.
+- Gọi món mới (POS gửi bếp, QR, mở phiên) chỉ 10:00–22:00.
+
+### 7.4. Giao hàng & tự lấy (`Admin\OrderService`)
+- `OUT_FOR_DELIVERY → DELIVERED | DELIVERY_FAILED`; `DELIVERY_FAILED → AWAITING_DRIVER`. Ghi thất bại bắt buộc nguyên nhân + mô tả ≥ 3 ký tự.
+- Đơn QR phải đủ tiền trước khi giao tài xế/bàn giao. Đơn tiền mặt ghi `COD` khi `DELIVERED`/`COLLECTED`.
+- `COLLECTED` bắt buộc đúng `pickupCode` hoặc `verifiedPhone` (chuẩn hóa +84 → 0); `collectedBy` lưu người lấy hộ.
+- Hủy: không khi đang giao; `reasonType` hợp lệ; `PICKUP_NO_SHOW` chỉ khi quá hạn giữ món; `RETAINED` chỉ khi lỗi do khách; `ADDRESS_UNSERVICEABLE` luôn phải hoàn.
+- Sửa người nhận: trước khi giao tài xế/bàn giao, đơn chưa kết thúc; admin cần lý do.
+- Checkout: giờ hẹn ở tương lai, ≤ 7 ngày, trong giờ nhận đơn; không hẹn thì bếp phải đang nhận đơn; `expectedTotal` lệch → 409 `PRICE_CHANGED`.

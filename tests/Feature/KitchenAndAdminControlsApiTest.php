@@ -5,11 +5,14 @@ namespace Tests\Feature;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\KitchenItemStatus;
+use App\Enums\MoneyFlag;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
+use App\Enums\ReconciliationStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\TableStatus;
 use App\Models\DiningTable;
+use App\Models\MoneyTransaction;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Reservation;
@@ -36,12 +39,16 @@ class KitchenAndAdminControlsApiTest extends TestCase
         ])->assertOk()->json('data.accessToken');
     }
 
+    /** Đơn tự lấy của seeder, hẹn trong 20 phút nên đã tới giờ xuống bếp (giờ hẹn − 30 phút). */
     private function pendingPickupOrder(): Order
     {
-        return Order::query()
+        $order = Order::query()
             ->where('trang_thai', OrderStatus::PENDING_CONFIRMATION->value)
             ->where('loai_phuc_vu', FulfillmentType::PICKUP->value)
             ->firstOrFail();
+        $order->update(['thoi_gian_nhan_du_kien' => now()->addMinutes(20)]);
+
+        return $order->fresh();
     }
 
     public function test_kitchen_board_hides_unconfirmed_online_orders_and_shows_confirmed_ones(): void
@@ -153,9 +160,21 @@ class KitchenAndAdminControlsApiTest extends TestCase
             'ma_giao_dich' => 'FT26102100123',
         ]);
 
+        // Cùng mã đã ghi: không ghi lại.
+        $this->withToken($token)
+            ->postJson("/api/v1/admin/payments/{$payment->ma_thanh_toan}/confirm", ['transactionCode' => 'FT26102100123'])
+            ->assertStatus(409);
+
+        // Khoản chuyển thật thứ hai (mã khác) cho đơn đã đủ tiền: được lưu sổ, chờ hoàn, không tăng tiền bán hàng.
         $this->withToken($token)
             ->postJson("/api/v1/admin/payments/{$payment->ma_thanh_toan}/confirm", ['transactionCode' => 'FT26102100124'])
-            ->assertStatus(409);
+            ->assertOk()
+            ->assertJsonPath('data.status', 'PAID');
+        $second = MoneyTransaction::where('ma_tham_chieu', 'FT26102100124')->sole();
+        $this->assertSame(MoneyFlag::DUPLICATE, $second->canh_bao);
+        $this->assertSame(ReconciliationStatus::NEEDS_REVIEW, $second->trang_thai_doi_soat);
+        $this->assertEquals((float) $second->so_tien, $second->unallocatedAmount());
+        $this->assertEquals((float) $order->fresh()->tong_tien, (float) $payment->fresh()->so_tien_da_thu);
     }
 
     public function test_staff_cannot_use_admin_payment_confirmation(): void

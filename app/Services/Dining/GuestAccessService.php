@@ -48,10 +48,10 @@ class GuestAccessService
 
         $visit = TableVisit::query()
             ->where('token_hash', TableVisit::hashToken($visitToken))
-            ->where('ma_ban', $table->ma_ban)
             ->first();
 
-        if (! $visit) {
+        // Thẻ khách chỉ dùng được ở bàn đã quét, hoặc ở bàn mà phiên của thẻ đã được chuyển/ghép sang.
+        if (! $visit || ((int) $visit->ma_ban !== (int) $table->ma_ban && ! $this->sessionCoversTable($visit, $table))) {
             return null;
         }
 
@@ -64,6 +64,58 @@ class GuestAccessService
         }
 
         return $visit;
+    }
+
+    /**
+     * Phiên của thẻ hiện gồm bàn này (sau khi chuyển/ghép bàn): khi phiên đang mở, hoặc đã đóng trong
+     * thời hạn đọc lại hóa đơn (`dining.visit_readable_hours`). Chỉ cấp quyền đọc phiên của chính thẻ —
+     * thẻ không bao giờ được gắn vào phiên mới của bàn (xem isBoundToSession).
+     */
+    public function sessionCoversTable(TableVisit $visit, DiningTable $table): bool
+    {
+        if (! $visit->ma_phien || $visit->trang_thai !== TableVisitStatus::ACTIVE) {
+            return false;
+        }
+
+        $session = ServiceSession::query()
+            ->whereKey($visit->ma_phien)
+            ->whereHas('tables', fn ($query) => $query->where('BAN_AN.ma_ban', $table->ma_ban))
+            ->first();
+        if (! $session) {
+            return false;
+        }
+        if (in_array($session->trang_thai, [PosSessionStatus::OPEN, PosSessionStatus::AWAITING_PAYMENT], true)) {
+            return true;
+        }
+
+        return $session->dong_luc !== null
+            && $session->dong_luc->copy()->addHours((int) config('dining.visit_readable_hours', 6))->isFuture();
+    }
+
+    /**
+     * Phiên của thẻ đã rời bàn đang quét (đổi bàn): trả về bàn mới để khách chuyển sang.
+     *
+     * @return array{tableNames: list<string>, tableToken: ?string}|null
+     */
+    public function movedTo(DiningTable $table, ?TableVisit $visit): ?array
+    {
+        if (! $visit || $visit->trang_thai !== TableVisitStatus::ACTIVE || ! $visit->ma_phien) {
+            return null;
+        }
+
+        $session = ServiceSession::query()
+            ->with('tables')
+            ->whereKey($visit->ma_phien)
+            ->whereIn('trang_thai', [PosSessionStatus::OPEN->value, PosSessionStatus::AWAITING_PAYMENT->value])
+            ->first();
+        if (! $session || $session->tables->contains('ma_ban', $table->ma_ban)) {
+            return null;
+        }
+
+        return [
+            'tableNames' => $session->tables->pluck('ten_ban')->values()->all(),
+            'tableToken' => $session->tables->first()?->ma_qr,
+        ];
     }
 
     public function requireVisit(DiningTable $table, ?string $visitToken): TableVisit

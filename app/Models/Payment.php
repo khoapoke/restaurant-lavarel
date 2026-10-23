@@ -26,12 +26,20 @@ class Payment extends Model
         'idempotency_key',
         'log_callback',
         'ly_do_hoan_tien',
+        'so_tien_da_thu',
+        'so_tien_da_hoan',
+        'thanh_toan_luc',
+        'cap_nhat_luc',
     ];
 
     protected $casts = [
         'so_tien' => 'decimal:2',
         'phuong_thuc' => PaymentMethod::class,
         'trang_thai' => PaymentStatus::class,
+        'so_tien_da_thu' => 'decimal:2',
+        'so_tien_da_hoan' => 'decimal:2',
+        'thanh_toan_luc' => 'datetime',
+        'cap_nhat_luc' => 'datetime',
     ];
 
     // Accessors / Mutators

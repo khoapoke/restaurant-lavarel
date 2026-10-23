@@ -26,6 +26,11 @@ class UpdateReservationStatusRequest extends FormRequest
     {
         return [
             'targetStatus' => ['required', Rule::in(array_column(ReservationStatus::cases(), 'name'))],
+            // Lý do hiển thị cho khách (bắt buộc khi từ chối/hủy — kiểm tra trong service).
+            'reason' => ['nullable', 'string', 'max:500'],
+            // Ghi chú nội bộ: không bao giờ trả cho khách.
+            'internalNote' => ['nullable', 'string', 'max:500'],
+            // Tương thích ngược: trước đây adminNote vừa là lý do vừa là ghi chú.
             'adminNote' => ['nullable', 'string', 'max:500'],
         ];
     }

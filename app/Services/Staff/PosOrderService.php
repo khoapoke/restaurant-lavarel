@@ -15,6 +15,7 @@ use App\Models\KitchenTicket;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\ServiceSession;
+use App\Services\Shared\OpeningHours;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -66,7 +67,7 @@ class PosOrderService
             $this->assertSessionOpen($lockedOrder->serviceSession);
 
             $dish = Dish::lockForUpdate()->findOrFail($data['dishId']);
-            if (! $dish->isAvailable || ! $dish->isVisible || $dish->isDeleted) {
+            if (! $dish->isOrderable()) {
                 throw new HttpException(409, 'Dish is currently unavailable.');
             }
 
@@ -76,6 +77,7 @@ class PosOrderService
                 'ma_mon_an' => $dish->ma_mon_an,
                 'ten_mon_snapshot' => $dish->ten_mon_an,
                 'so_luong' => (int) $data['quantity'],
+                'so_luong_tinh_tien' => (int) $data['quantity'],
                 'don_gia' => $dish->gia_tien,
                 'ghi_chu' => $note ?: null,
                 'trang_thai_bep' => KitchenItemStatus::DRAFT,
@@ -97,6 +99,7 @@ class PosOrderService
 
             $lockedItem->update([
                 'so_luong' => $data['quantity'] ?? $lockedItem->so_luong,
+                'so_luong_tinh_tien' => $data['quantity'] ?? $lockedItem->so_luong,
                 'ghi_chu' => array_key_exists('note', $data) ? ($data['note'] ?: null) : $lockedItem->ghi_chu,
             ]);
             $this->recalculate($lockedItem->order);
@@ -120,6 +123,8 @@ class PosOrderService
     /** @return array{order: Order, ticket: KitchenTicket} */
     public function sendKitchen(Order $order, Account $staff, array $itemIds): array
     {
+        app(OpeningHours::class)->assertAcceptsOrders();
+
         return DB::transaction(function () use ($order, $staff, $itemIds) {
             $lockedOrder = Order::with('serviceSession')->lockForUpdate()->findOrFail($order->ma_don_hang);
             $this->assertSessionOpen($lockedOrder->serviceSession);
@@ -158,15 +163,17 @@ class PosOrderService
         });
     }
 
-    /** Recompute the order total from its billable items (also used by Live Dining). */
+    /**
+     * Recompute the order total from billed quantities (ADR-024): don_gia × so_luong_tinh_tien.
+     * A cancelled line is billed only when its charge was kept (khách đổi ý sau khi bếp nấu).
+     */
     public function recalculate(Order $order): void
     {
         $total = OrderItem::where('ma_don_hang', $order->ma_don_hang)
-            ->whereNotIn('trang_thai_bep', [KitchenItemStatus::CANCELLED->value, KitchenItemStatus::REJECTED->value])
             ->get()
-            ->sum(fn ($item) => (float) $item->don_gia * (int) $item->so_luong);
+            ->sum(fn (OrderItem $item) => $item->billedAmount());
 
-        $order->update(['tong_tien' => $total, 'phien_ban' => $order->phien_ban + 1]);
+        $order->update(['tong_tien' => round($total, 2), 'phien_ban' => $order->phien_ban + 1]);
     }
 
     private function assertSessionOpen(?ServiceSession $session): void

@@ -20,6 +20,8 @@ class PaymentWebhookApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Giờ cố định trong giờ nhận gọi món/đặt bàn (config/restaurant.php).
+        $this->travelTo(now()->setTime(12, 0));
         $this->seed(RestaurantSeeder::class);
         config(['services.payment_webhook.secret' => self::SECRET, 'services.payment_webhook.allow_unsigned' => false]);
     }
@@ -52,7 +54,7 @@ class PaymentWebhookApiTest extends TestCase
             'content' => "DH{$order->ma_don_hang} THANH TOAN",
             'transferAmount' => (float) $order->tong_tien,
             'transactionCode' => 'FT-SEPAY-0001',
-        ])->assertOk()->assertJsonPath('data.status', 'PAID');
+        ])->assertOk()->assertJsonPath('data.status', 'APPLIED');
 
         $this->assertDatabaseHas('THANH_TOAN', [
             'ma_don_hang' => $order->ma_don_hang,
@@ -96,18 +98,21 @@ class PaymentWebhookApiTest extends TestCase
         ]);
     }
 
-    public function test_underpaid_transfer_is_logged_but_not_marked_paid(): void
+    public function test_underpaid_transfer_is_recorded_as_a_partial_payment_without_confirming_the_order(): void
     {
         $order = $this->pendingQrOrder();
 
         $this->sendWebhook([
             'orderId' => $order->ma_don_hang,
             'amount' => (float) $order->tong_tien - 1000,
-        ])->assertBadRequest();
+            'transactionCode' => 'FT-SHORT-0001',
+        ])->assertOk()->assertJsonPath('data.flag', 'UNDERPAID');
 
         $payment = $order->payment()->firstOrFail();
-        $this->assertSame(PaymentStatus::UNPAID, $payment->trang_thai);
-        $this->assertStringContainsString('PAID_AMOUNT_TOO_LOW', (string) $payment->log_callback);
+        $this->assertSame(PaymentStatus::PARTIALLY_PAID, $payment->trang_thai);
+        $this->assertEquals((float) $order->tong_tien - 1000, (float) $payment->so_tien_da_thu);
+        $this->assertDatabaseHas('GIAO_DICH_TIEN', ['ma_tham_chieu' => 'FT-SHORT-0001', 'so_tien' => (float) $order->tong_tien - 1000]);
+        $this->assertDatabaseHas('DON_HANG', ['ma_don_hang' => $order->ma_don_hang, 'trang_thai' => OrderStatus::PENDING_CONFIRMATION->value]);
     }
 
     public function test_webhook_requires_a_paid_amount(): void

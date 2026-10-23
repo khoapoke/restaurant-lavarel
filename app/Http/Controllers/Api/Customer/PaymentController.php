@@ -58,11 +58,17 @@ class PaymentController extends Controller
     public function handleCallback(Request $request): JsonResponse
     {
         $signature = $request->header('x-signature') ?? $request->header('signature');
-        $payment = $this->paymentService->processWebhook($request->all(), $request->getContent(), $signature);
+        $result = $this->paymentService->processWebhook($request->all(), $request->getContent(), $signature);
+        $transaction = $result['transaction'];
 
         return $this->successResponse([
-            'orderId' => (int) $payment->ma_don_hang,
-            'status' => 'PAID',
-        ], 'Payment webhook processed successfully', 200);
+            'transactionId' => (int) $transaction->ma_giao_dich_tien,
+            'orderId' => $transaction->ma_don_hang_muc_tieu ? (int) $transaction->ma_don_hang_muc_tieu : null,
+            'duplicateCallback' => $result['duplicateCallback'],
+            'appliedAmount' => $result['applied'],
+            'reconciliation' => $transaction->trang_thai_doi_soat->name,
+            'flag' => $transaction->canh_bao?->name,
+            'status' => $result['applied'] > 0 && $transaction->trang_thai_doi_soat->name === 'MATCHED' ? 'APPLIED' : ($result['duplicateCallback'] ? 'DUPLICATE_CALLBACK' : 'RECORDED_FOR_REVIEW'),
+        ], 'Payment webhook recorded', 200);
     }
 }

@@ -2,28 +2,24 @@
 
 namespace App\Http\Requests\Admin;
 
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ConfirmPaymentRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
     /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
+     * @return array<string, mixed>
      */
     public function rules(): array
     {
         return [
-            'transactionCode' => ['required', 'string', 'min:4', 'max:100'],
+            'transactionCode' => ['required', 'string', 'min:6', 'max:100'],
+            'amount' => ['nullable', 'numeric', 'gt:0'],
+            'receivedAt' => ['nullable', 'date', 'before_or_equal:now'],
             'note' => ['nullable', 'string', 'max:255'],
         ];
     }

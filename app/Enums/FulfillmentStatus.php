@@ -12,13 +12,15 @@ enum FulfillmentStatus: string
     case COLLECTED = 'COLLECTED';
     case SERVING = 'SERVING';
     case SERVED = 'SERVED';
+    case DELIVERY_FAILED = 'DELIVERY_FAILED';
 
     public function canTransitionTo(FulfillmentType $type, self $target): bool
     {
         return match ($type) {
             FulfillmentType::DELIVERY => match ($this) {
                 self::AWAITING_DRIVER => $target === self::OUT_FOR_DELIVERY,
-                self::OUT_FOR_DELIVERY => $target === self::DELIVERED,
+                self::OUT_FOR_DELIVERY => in_array($target, [self::DELIVERED, self::DELIVERY_FAILED], true),
+                self::DELIVERY_FAILED => $target === self::AWAITING_DRIVER,
                 default => false,
             },
             FulfillmentType::PICKUP => $this === self::AWAITING_CUSTOMER

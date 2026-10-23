@@ -16,7 +16,9 @@ use App\Models\OrderItem;
 use App\Models\ServiceRequest;
 use App\Models\ServiceSession;
 use App\Models\TableVisit;
+use App\Services\Payments\PaymentLedgerService;
 use App\Services\Payments\VietQrService;
+use App\Services\Shared\OpeningHours;
 use Illuminate\Support\Collection;
 
 /**
@@ -31,6 +33,7 @@ class LiveStateService
     public function __construct(
         private readonly GuestAccessService $guestAccess,
         private readonly VietQrService $vietQrService,
+        private readonly PaymentLedgerService $ledger,
     ) {}
 
     /** @return array<string, mixed> */
@@ -53,6 +56,9 @@ class LiveStateService
                 'requiresJoinCode' => $activeSession && ! ($visit && $this->guestAccess->isBoundToSession($visit, $activeSession)),
                 'joinCodeLocked' => $activeSession && ! ($visit && $this->guestAccess->isBoundToSession($visit, $activeSession)) && $activeSession->isJoinCodeLocked(),
                 'hasPendingCheckIn' => (bool) $pendingCheckIn && (! $visit || (int) $pendingCheckIn->ma_luot !== (int) $visit->ma_luot),
+                'movedTo' => $this->guestAccess->movedTo($table, $visit),
+                'orderingOpen' => app(OpeningHours::class)->acceptsOrdersAt(now()),
+                'lastOrderAt' => (string) config('restaurant.hours.last_order_at'),
             ],
             'visit' => $visit ? $this->visitData($visit, $activeSession) : null,
             'session' => null,
@@ -142,7 +148,8 @@ class LiveStateService
             ->limit(20)
             ->get();
 
-        $billable = $items->reject(fn (OrderItem $item) => in_array($item->trang_thai_bep, [KitchenItemStatus::CANCELLED, KitchenItemStatus::REJECTED], true));
+        // Tiền theo số lượng tính tiền (ADR-024): món hủy do lỗi nhà hàng không tính, khách đổi ý sau khi nấu vẫn tính.
+        $billable = $items->filter(fn (OrderItem $item) => (int) ($item->so_luong_tinh_tien ?? $item->so_luong) > 0);
 
         return [
             'session' => [
@@ -170,13 +177,13 @@ class LiveStateService
                 'acknowledgedAt' => $request->nhan_luc?->toIso8601String(),
                 'completedAt' => $request->hoan_thanh_luc?->toIso8601String(),
             ])->values()->all(),
-            'invoice' => $this->invoiceData($session->invoice, $billable),
+            'invoice' => $this->invoiceData($session->invoice, $billable, $session),
             'summary' => [
                 'itemCount' => (int) $billable->sum('so_luong'),
                 'inKitchenCount' => (int) $billable->filter(fn (OrderItem $item) => in_array($item->trang_thai_bep, [KitchenItemStatus::SENT, KitchenItemStatus::QUEUED, KitchenItemStatus::PREPARING], true))->sum('so_luong'),
                 'readyCount' => (int) $billable->filter(fn (OrderItem $item) => $item->trang_thai_bep === KitchenItemStatus::READY)->sum('so_luong'),
                 'servedCount' => (int) $billable->filter(fn (OrderItem $item) => $item->trang_thai_bep === KitchenItemStatus::SERVED)->sum('so_luong'),
-                'subTotal' => round((float) $billable->sum(fn (OrderItem $item) => (float) $item->don_gia * (int) $item->so_luong), 2),
+                'subTotal' => round((float) $billable->sum(fn (OrderItem $item) => $item->billedAmount()), 2),
             ],
         ];
     }
@@ -244,6 +251,10 @@ class LiveStateService
                 'note' => $item->ghi_chu,
                 'status' => $item->trang_thai_bep->name,
                 'statusChangedAt' => $item->bep_cap_nhat_luc?->toIso8601String(),
+                // Chỉ nhãn lý do; ghi chú nội bộ của nhân viên/bếp không bao giờ trả cho khách.
+                'billedQuantity' => (int) ($item->so_luong_tinh_tien ?? $item->so_luong),
+                'cancelReason' => $item->loai_ly_do_huy?->label(),
+                'lineType' => $item->loai_dong?->name ?? 'NORMAL',
             ])->values()->all(),
         ];
     }
@@ -252,19 +263,23 @@ class LiveStateService
      * @param  Collection<int, OrderItem>  $billable
      * @return array<string, mixed>|null
      */
-    private function invoiceData(?Invoice $invoice, Collection $billable): ?array
+    private function invoiceData(?Invoice $invoice, Collection $billable, ServiceSession $session): ?array
     {
         if (! $invoice || $invoice->trang_thai === InvoiceStatus::VOID) {
             return null;
         }
 
+        $order = $session->orders->first(fn ($order) => $order->ma_don_hang === $invoice->ma_don_hang);
+        $paid = $order ? $this->ledger->paidAmount($order) : 0.0;
+        $outstanding = $order ? $this->ledger->outstanding($order) : (float) $invoice->tong_thanh_toan;
+
         $lines = $billable
             ->groupBy(fn (OrderItem $item) => $item->ten_mon_snapshot.'|'.$item->don_gia)
             ->map(fn (Collection $group) => [
                 'dishName' => $group->first()->ten_mon_snapshot,
-                'quantity' => (int) $group->sum('so_luong'),
+                'quantity' => (int) $group->sum(fn (OrderItem $item) => (int) ($item->so_luong_tinh_tien ?? $item->so_luong)),
                 'unitPrice' => (float) $group->first()->don_gia,
-                'subTotal' => round((float) $group->sum(fn (OrderItem $item) => (float) $item->don_gia * (int) $item->so_luong), 2),
+                'subTotal' => round((float) $group->sum(fn (OrderItem $item) => $item->billedAmount()), 2),
             ])
             ->values()
             ->all();
@@ -272,8 +287,11 @@ class LiveStateService
         $payment = $invoice->payment;
 
         return [
-            'invoiceNumber' => 'HD'.str_pad((string) $invoice->ma_hoa_don, 5, '0', STR_PAD_LEFT),
+            'invoiceNumber' => 'HD'.str_pad((string) $invoice->ma_hoa_don, 5, '0', STR_PAD_LEFT).'-V'.$invoice->phien_ban,
+            'version' => (int) $invoice->phien_ban,
             'status' => $invoice->trang_thai->name,
+            'amountPaid' => $paid,
+            'outstanding' => $invoice->trang_thai === InvoiceStatus::OPEN ? $outstanding : 0.0,
             'lines' => $lines,
             'subTotal' => (float) $invoice->tam_tinh,
             'discountTotal' => (float) $invoice->giam_gia,
@@ -285,10 +303,10 @@ class LiveStateService
                 'status' => $payment->trang_thai->name,
                 'amount' => (float) $payment->so_tien,
             ] : null,
-            'qr' => $invoice->trang_thai === InvoiceStatus::OPEN
+            'qr' => $invoice->trang_thai === InvoiceStatus::OPEN && $outstanding > 0
                 ? collect($this->vietQrService->build(
-                    (float) $invoice->tong_thanh_toan,
-                    $this->vietQrService->invoiceTransferContent((int) $invoice->ma_hoa_don)
+                    $outstanding,
+                    $this->vietQrService->invoiceTransferContent((int) $invoice->ma_hoa_don, (int) $invoice->phien_ban)
                 ))->only(['qrImageUrl', 'transferContent', 'accountName', 'accountNo'])->all()
                 : null,
         ];

@@ -29,6 +29,9 @@ class OrderPaymentResource extends JsonResource
             'amount' => (float) $this->amount,
             'paymentMethod' => $pMethod,
             'status' => $pStatus,
+            'amountPaid' => (float) ($this->so_tien_da_thu ?? 0),
+            'amountRefunded' => (float) ($this->so_tien_da_hoan ?? 0),
+            'paidAt' => $this->thanh_toan_luc?->toIso8601String(),
         ];
     }
 }

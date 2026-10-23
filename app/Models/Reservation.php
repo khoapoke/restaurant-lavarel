@@ -23,12 +23,21 @@ class Reservation extends Model
         'ghi_chu',
         'ma_tai_khoan',
         'ma_ban',
+        'ghi_chu_noi_bo',
+        'gia_han_den',
+        'ly_do_gia_han',
+        'ma_nguoi_gia_han',
+        'xu_ly_luc',
+        'ma_nguoi_xu_ly',
+        'ly_do_xu_ly',
     ];
 
     protected $casts = [
         'thoi_gian' => 'datetime',
         'so_luong_khach' => 'integer',
         'trang_thai' => ReservationStatus::class,
+        'gia_han_den' => 'datetime',
+        'xu_ly_luc' => 'datetime',
     ];
 
     // Accessors / Mutators
@@ -94,6 +103,16 @@ class Reservation extends Model
     public function diningTable(): BelongsTo
     {
         return $this->belongsTo(DiningTable::class, 'ma_ban', 'ma_ban');
+    }
+
+    public function handledBy(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'ma_nguoi_xu_ly', 'ma_tai_khoan');
+    }
+
+    public function extendedBy(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'ma_nguoi_gia_han', 'ma_tai_khoan');
     }
 
     public function serviceSessions(): HasMany

@@ -6,6 +6,7 @@ use App\Enums\AccountStatus;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\KitchenItemStatus;
+use App\Enums\MoneySource;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
@@ -26,6 +27,7 @@ use App\Models\Reservation;
 use App\Models\Role;
 use App\Models\ServiceSession;
 use App\Models\UserProfile;
+use App\Services\Payments\PaymentLedgerService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -454,10 +456,11 @@ class RestaurantSeeder extends Seeder
         Payment::create([
             'so_tien' => 196000,
             'phuong_thuc' => PaymentMethod::CASH,
-            'trang_thai' => PaymentStatus::PAID,
+            'trang_thai' => PaymentStatus::UNPAID,
             'ma_don_hang' => $order1->ma_don_hang,
-            'ma_giao_dich' => 'CASH-'.$order1->ma_don_hang,
         ]);
+        // Thu tiền mặt khi giao (COD) — ghi vào sổ giao dịch như luồng thật.
+        $this->seedReceivedMoney($order1, MoneySource::COD, PaymentMethod::CASH, null, Carbon::now()->subDays(2)->addHour());
 
         // Đơn 2: Chờ xác nhận (PENDING_CONFIRMATION) của kh2
         $order2 = Order::create([
@@ -507,11 +510,10 @@ class RestaurantSeeder extends Seeder
         Payment::create([
             'so_tien' => 79000 + 45000,
             'phuong_thuc' => PaymentMethod::BANK_TRANSFER_QR,
-            'trang_thai' => PaymentStatus::PAID,
+            'trang_thai' => PaymentStatus::UNPAID,
             'ma_don_hang' => $order3->ma_don_hang,
-            'ma_giao_dich' => 'FT'.Carbon::now()->format('ymd').'88231',
-            'log_callback' => json_encode(['source' => 'SEEDER', 'note' => 'Khách đã chuyển khoản qua VietQR'], JSON_UNESCAPED_UNICODE),
         ]);
+        $this->seedReceivedMoney($order3, MoneySource::WEBHOOK, PaymentMethod::BANK_TRANSFER_QR, 'FT'.Carbon::now()->format('ymd').'88231', Carbon::now()->subMinutes(40));
 
         // 10. Reservations (DAT_BAN)
         // Phiếu đặt 1: kh1 giữ Bàn T03 cho tối nay (CONFIRMED) — bàn hiển thị "Đã đặt" trên sơ đồ POS
@@ -583,5 +585,24 @@ class RestaurantSeeder extends Seeder
             'ma_tai_khoan' => $accKh2->ma_tai_khoan,
             'ma_ban' => $table2->ma_ban,
         ]);
+    }
+
+    /** Ghi một khoản tiền đã nhận vào sổ giao dịch và áp vào đơn (dữ liệu mẫu). */
+    private function seedReceivedMoney(Order $order, MoneySource $source, PaymentMethod $method, ?string $reference, Carbon $receivedAt): void
+    {
+        $ledger = app(PaymentLedgerService::class);
+        $recorded = $ledger->record([
+            'source' => $source,
+            'method' => $method,
+            'amount' => (float) $order->tong_tien,
+            'provider' => $method === PaymentMethod::CASH ? 'CASH_ON_DELIVERY' : null,
+            'account' => $method === PaymentMethod::CASH ? null : config('services.vietqr.account_no'),
+            'reference' => $reference,
+            'idempotencyKey' => $reference ? null : 'seed-cod-'.$order->ma_don_hang,
+            'receivedAt' => $receivedAt,
+            'orderId' => $order->ma_don_hang,
+            'payload' => ['source' => 'SEEDER'],
+        ]);
+        $ledger->applyToOrder($recorded['transaction'], $order, null, null);
     }
 }

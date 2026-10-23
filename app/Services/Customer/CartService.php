@@ -10,9 +10,6 @@ class CartService
 {
     /**
      * Get or create active cart for the customer (CRT-04).
-     *
-     * @param int $accountId
-     * @return Cart
      */
     public function getCart(int $accountId): Cart
     {
@@ -27,17 +24,13 @@ class CartService
     /**
      * Add dish to cart or accumulate quantity using BelongsToMany pivot (CRT-01, MNU-08).
      *
-     * @param int $accountId
-     * @param int $dishId
-     * @param int $quantity
-     * @return Cart
      * @throws HttpException
      */
     public function addItem(int $accountId, int $dishId, int $quantity): Cart
     {
         // 1. Kiểm tra món ăn có tồn tại và đang còn bán không
         $dish = Dish::where('ma_mon_an', $dishId)->first();
-        if (!$dish || !$dish->isAvailable || !$dish->isVisible || $dish->isDeleted) {
+        if (! $dish || ! $dish->isOrderable()) {
             throw new HttpException(400, 'Dish is currently unavailable or out of stock');
         }
 
@@ -69,11 +62,6 @@ class CartService
 
     /**
      * Update quantity of a dish in cart (CRT-02).
-     *
-     * @param int $accountId
-     * @param int $dishId
-     * @param int $quantity
-     * @return Cart
      */
     public function updateQuantity(int $accountId, int $dishId, int $quantity): Cart
     {
@@ -105,10 +93,6 @@ class CartService
 
     /**
      * Remove dish from cart (CRT-03).
-     *
-     * @param int $accountId
-     * @param int $dishId
-     * @return Cart
      */
     public function removeItem(int $accountId, int $dishId): Cart
     {

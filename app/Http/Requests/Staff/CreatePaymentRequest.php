@@ -20,7 +20,8 @@ class CreatePaymentRequest extends FormRequest
     {
         return [
             'method' => ['required', 'in:CASH,BANK_TRANSFER_QR'],
-            'amount' => ['required', 'numeric', 'min:0'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'cashTendered' => ['nullable', 'numeric', 'min:0'],
             'transactionCode' => ['nullable', 'string', 'max:100'],
             'idempotencyKey' => ['required', 'string', 'min:12', 'max:80'],
         ];

@@ -53,6 +53,13 @@ class PosSessionResource extends JsonResource
                 'acknowledgedAt' => $serviceRequest->nhan_luc?->toIso8601String(),
                 'completedAt' => $serviceRequest->hoan_thanh_luc?->toIso8601String(),
             ])->values()),
+            'expectedEndAt' => $this->du_kien_ket_thuc_luc?->toIso8601String(),
+            'endType' => $this->kieu_ket_thuc?->name,
+            'writeOff' => $this->so_tien_that_thu > 0 ? [
+                'amount' => (float) $this->so_tien_that_thu,
+                'reason' => $this->ly_do_that_thu,
+            ] : null,
+            'approvals' => $this->whenLoaded('approvals', fn () => ApprovalResource::collection($this->approvals)),
             'liveDining' => $this->whenLoaded('visits', fn () => [
                 'connectedGuests' => $this->visits->count(),
                 'joinCode' => $this->ma_tham_gia,

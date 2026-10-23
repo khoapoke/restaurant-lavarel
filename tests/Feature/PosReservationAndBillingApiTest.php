@@ -129,29 +129,48 @@ class PosReservationAndBillingApiTest extends TestCase
 
     public function test_walk_in_cannot_take_a_table_held_for_an_upcoming_reservation(): void
     {
+        // Lượt 12:40: phải trả bàn lúc 12:25 (trừ 15 phút dọn) — không đủ 30 phút cho khách vãng lai.
         $table = $this->availableTable();
-        $reservation = $this->confirmedReservationToday($table, 60);
+        $reservation = $this->confirmedReservationToday($table, 40);
 
         $this->openSession(['tableIds' => [$table->ma_ban], 'guestCount' => 2], 'walk-in-held-table-0001')
             ->assertStatus(409)
-            ->assertJsonPath('message', "{$table->ten_ban} is held for reservation #{$reservation->ma_dat_ban} at 13:00. Seat that reservation or choose another table.");
+            ->assertJsonPath('message', "{$table->ten_ban} is held for reservation #{$reservation->ma_dat_ban} at 12:40. Seat that reservation or choose another table.");
 
         $this->assertDatabaseHas('BAN_AN', ['ma_ban' => $table->ma_ban, 'trang_thai' => TableStatus::RESERVED->value]);
     }
 
-    public function test_reservation_for_another_table_cannot_be_seated(): void
+    public function test_walk_in_before_a_later_reservation_is_told_when_to_leave(): void
+    {
+        // Lượt 13:00: khách vãng lai được ngồi nhưng phải trả bàn trước 12:45 (RSV-17).
+        $table = $this->availableTable();
+        $this->confirmedReservationToday($table, 60);
+
+        $this->openSession(['tableIds' => [$table->ma_ban], 'guestCount' => 2], 'walk-in-leave-by-0001')
+            ->assertCreated()
+            ->assertJsonPath('data.expectedEndAt', now()->setTime(12, 45)->toIso8601String());
+    }
+
+    public function test_reservation_for_another_table_needs_a_relocation_reason(): void
     {
         $reservedTable = $this->availableTable();
         $reservation = $this->confirmedReservationToday($reservedTable);
         $otherTable = DiningTable::where('trang_thai', TableStatus::AVAILABLE->value)->orderBy('ma_ban')->firstOrFail();
 
-        $this->openSession([
+        $payload = [
             'tableIds' => [$otherTable->ma_ban],
             'guestCount' => 2,
             'reservationId' => $reservation->ma_dat_ban,
-        ], 'wrong-table-seat-0001')
-            ->assertStatus(409)
-            ->assertJsonPath('message', 'The reservation belongs to a different table.');
+        ];
+        $this->openSession($payload, 'wrong-table-seat-0001')
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'The reservation belongs to a different table. Give a reason to seat the guests elsewhere.');
+
+        $sessionId = $this->openSession([...$payload, 'relocationReason' => 'Bàn đặt bị đổ nước'], 'wrong-table-seat-0002')
+            ->assertCreated()
+            ->assertJsonPath('data.reservation.reservationId', $reservation->ma_dat_ban)
+            ->json('data.sessionId');
+        $this->assertDatabaseHas('NHAT_KY_THAO_TAC', ['hanh_dong' => 'SESSION_OPENED', 'ma_doi_tuong' => $sessionId, 'ly_do' => 'Bàn đặt bị đổ nước']);
     }
 
     public function test_session_opened_by_mistake_can_be_cancelled_before_the_kitchen_starts(): void

@@ -143,6 +143,40 @@ class Dish extends Model
     }
 
     // Relationships
+    /**
+     * Món được hiển thị công khai: chưa xóa, đang hiện và danh mục của nó cũng đang hiện.
+     * Cờ của từng món giữ nguyên khi ẩn/hiện danh mục (MNU-01).
+     */
+    public function scopePubliclyListed(Builder $query): Builder
+    {
+        return $query->where('MON_AN.da_xoa', false)
+            ->where('MON_AN.hien_thi', true)
+            ->where(fn (Builder $nested) => $nested->whereNull('MON_AN.ma_danh_muc')
+                ->orWhereHas('category', fn (Builder $category) => $category->where('da_xoa', false)->where('hien_thi', true)));
+    }
+
+    public function categoryVisible(): bool
+    {
+        if (! $this->ma_danh_muc) {
+            return true;
+        }
+        $category = $this->relationLoaded('category') ? $this->category : $this->category()->first();
+
+        return $category !== null && ! $category->da_xoa && $category->hien_thi;
+    }
+
+    /** Hiển thị công khai (bất kể còn bán hay không). */
+    public function isListed(): bool
+    {
+        return ! $this->isDeleted && $this->isVisible && $this->categoryVisible();
+    }
+
+    /** Gọi được ngay: đang hiển thị công khai và còn bán. */
+    public function isOrderable(): bool
+    {
+        return $this->isListed() && $this->isAvailable;
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'ma_danh_muc', 'ma_danh_muc');

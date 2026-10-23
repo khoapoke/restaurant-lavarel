@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\ItemVoidReason;
 use App\Enums\KitchenItemStatus;
+use App\Enums\OrderLineType;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -28,6 +30,17 @@ class OrderItem extends Pivot
         'trang_thai_bep',
         'client_request_id',
         'bep_cap_nhat_luc',
+        'so_luong_tinh_tien',
+        'loai_dong',
+        'ma_chi_tiet_goc',
+        'loai_ly_do_huy',
+        'ly_do_huy',
+        'mien_tien',
+        'ma_nguoi_huy',
+        'ma_nguoi_mien_tien',
+        'huy_luc',
+        'trang_thai_bep_truoc',
+        'ma_nguoi_cap_nhat_bep',
     ];
 
     protected $casts = [
@@ -35,6 +48,11 @@ class OrderItem extends Pivot
         'don_gia' => 'decimal:2',
         'trang_thai_bep' => KitchenItemStatus::class,
         'bep_cap_nhat_luc' => 'datetime',
+        'so_luong_tinh_tien' => 'integer',
+        'loai_dong' => OrderLineType::class,
+        'loai_ly_do_huy' => ItemVoidReason::class,
+        'mien_tien' => 'boolean',
+        'huy_luc' => 'datetime',
     ];
 
     // Accessors / Mutators
@@ -74,6 +92,17 @@ class OrderItem extends Pivot
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'ma_don_hang', 'ma_don_hang');
+    }
+
+    /** Số tiền dòng này đang tính vào đơn. */
+    public function billedAmount(): float
+    {
+        return round((float) $this->don_gia * (int) ($this->so_luong_tinh_tien ?? $this->so_luong), 2);
+    }
+
+    public function original(): BelongsTo
+    {
+        return $this->belongsTo(OrderItem::class, 'ma_chi_tiet_goc', 'ma_chi_tiet');
     }
 
     public function tickets(): BelongsToMany

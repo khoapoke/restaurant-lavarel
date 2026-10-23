@@ -2,8 +2,11 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\CancellationMoneyDecision;
+use App\Services\Admin\OrderService;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CancelOrderRequest extends FormRequest
 {
@@ -24,6 +27,8 @@ class CancelOrderRequest extends FormRequest
     {
         return [
             'cancelReason' => ['required', 'string', 'min:5', 'max:500'],
+            'reasonType' => ['nullable', Rule::in(OrderService::CANCEL_REASON_TYPES)],
+            'moneyDecision' => ['nullable', Rule::enum(CancellationMoneyDecision::class)],
         ];
     }
 }

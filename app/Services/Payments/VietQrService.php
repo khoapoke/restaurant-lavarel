@@ -36,9 +36,10 @@ class VietQrService
         return "DH{$orderId} THANH TOAN";
     }
 
-    public function invoiceTransferContent(int $invoiceId): string
+    /** Nội dung có phiên bản hóa đơn (ADR-023): QR của phiên bản đã hủy không khớp phiên bản mới. */
+    public function invoiceTransferContent(int $invoiceId, int $version = 1): string
     {
-        return "HD{$invoiceId} THANH TOAN";
+        return "HD{$invoiceId}V{$version} THANH TOAN";
     }
 
     public function expiresInMinutes(): int

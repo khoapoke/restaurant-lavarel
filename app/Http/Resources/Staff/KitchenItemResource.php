@@ -4,6 +4,7 @@ namespace App\Http\Resources\Staff;
 
 use App\Enums\KitchenTicketSource;
 use App\Enums\OrderChannel;
+use App\Services\Staff\KitchenService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -37,6 +38,14 @@ class KitchenItemResource extends JsonResource
             'ticketId' => $ticket ? (int) $ticket->ma_phieu_bep : null,
             'sentAt' => $sentAt?->toIso8601String(),
             'statusChangedAt' => $this->bep_cap_nhat_luc?->toIso8601String(),
+            'previousStatus' => $this->trang_thai_bep_truoc,
+            'canUndo' => app(KitchenService::class)->canUndo($this->resource),
+            'undoUntil' => $this->bep_cap_nhat_luc?->copy()->addSeconds((int) config('restaurant.kitchen.undo_window_seconds', 120))->toIso8601String(),
+            'lineType' => $this->loai_dong?->name ?? 'NORMAL',
+            'originalItemId' => $this->ma_chi_tiet_goc ? (int) $this->ma_chi_tiet_goc : null,
+            'voidReason' => $this->loai_ly_do_huy?->name,
+            'voidNote' => $this->ly_do_huy,
+            'isAsap' => $isOnline && ! $this->order?->thoi_gian_nhan_du_kien,
         ];
     }
 }

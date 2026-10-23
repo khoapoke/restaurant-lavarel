@@ -9,6 +9,7 @@ use App\Enums\KitchenTicketSource;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PosSessionStatus;
+use App\Exceptions\DomainConflictException;
 use App\Models\DiningTable;
 use App\Models\Dish;
 use App\Models\KitchenTicket;
@@ -16,6 +17,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\ServiceSession;
 use App\Models\TableVisit;
+use App\Services\Shared\OpeningHours;
 use App\Services\Staff\PosOrderService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -33,13 +35,14 @@ class TableOrderService
     public function __construct(
         private readonly GuestAccessService $guestAccess,
         private readonly PosOrderService $posOrderService,
+        private readonly OpeningHours $hours,
     ) {}
 
     /**
      * @param  list<array{dishId: int|string, quantity: int|string, note?: ?string}>  $lines
      * @return array{ticket: KitchenTicket, created: bool}
      */
-    public function submit(DiningTable $table, TableVisit $visit, array $lines, string $idempotencyKey): array
+    public function submit(DiningTable $table, TableVisit $visit, array $lines, string $idempotencyKey, ?float $expectedTotal = null): array
     {
         $normalized = collect($lines)->map(fn (array $line) => [
             'dishId' => (int) $line['dishId'],
@@ -58,7 +61,10 @@ class TableOrderService
         }
 
         try {
-            return DB::transaction(fn (): array => $this->placeRound($table, $visit, $normalized, $idempotencyKey, $requestHash));
+            // Lượt đã nhận được trả lại ở trên trước mọi kiểm tra giờ/giá, nên gửi lại vẫn an toàn.
+            $this->hours->assertAcceptsOrders();
+
+            return DB::transaction(fn (): array => $this->placeRound($table, $visit, $normalized, $idempotencyKey, $requestHash, $expectedTotal));
         } catch (UniqueConstraintViolationException $exception) {
             $replay = $this->findReplay($visit, $idempotencyKey, $requestHash);
             if ($replay) {
@@ -73,7 +79,7 @@ class TableOrderService
      * @param  list<array{dishId: int, quantity: int, note: ?string}>  $lines
      * @return array{ticket: KitchenTicket, created: bool}
      */
-    private function placeRound(DiningTable $table, TableVisit $visit, array $lines, string $idempotencyKey, string $requestHash): array
+    private function placeRound(DiningTable $table, TableVisit $visit, array $lines, string $idempotencyKey, string $requestHash, ?float $expectedTotal = null): array
     {
         $activeSession = $this->guestAccess->activeSessionFor($table);
         $session = $activeSession
@@ -103,12 +109,23 @@ class TableOrderService
 
         foreach ($lines as $line) {
             $dish = $dishes->get($line['dishId']);
-            if (! $dish || $dish->isDeleted || ! $dish->isVisible) {
+            if (! $dish || ! $dish->isListed()) {
                 throw new HttpException(404, 'Dish not found');
             }
             if (! $dish->isAvailable) {
                 throw new HttpException(409, "Dish '{$dish->ten_mon_an}' has just sold out");
             }
+        }
+
+        // Giá đổi so với số khách đang xem: chưa gửi bếp, khách xác nhận lại (MNU-02/QR-07).
+        $roundTotal = round((float) collect($lines)->sum(fn (array $line) => (float) $dishes->get($line['dishId'])->gia_tien * $line['quantity']), 2);
+        if ($expectedTotal !== null && abs($expectedTotal - $roundTotal) > 0.009) {
+            throw new DomainConflictException('Prices changed since you opened the menu. Review your order and send it again.', [
+                'reason' => 'PRICE_CHANGED',
+                'expectedTotal' => round($expectedTotal, 2),
+                'currentTotal' => $roundTotal,
+                'prices' => collect($lines)->map(fn (array $line) => ['dishId' => $line['dishId'], 'unitPrice' => (float) $dishes->get($line['dishId'])->gia_tien])->values()->all(),
+            ]);
         }
 
         $ticket = KitchenTicket::create([
@@ -130,6 +147,7 @@ class TableOrderService
                 'ma_mon_an' => $dish->ma_mon_an,
                 'ten_mon_snapshot' => $dish->ten_mon_an,
                 'so_luong' => $line['quantity'],
+                'so_luong_tinh_tien' => $line['quantity'],
                 'don_gia' => $dish->gia_tien,
                 'ghi_chu' => $line['note'],
                 'trang_thai_bep' => KitchenItemStatus::SENT,

@@ -21,6 +21,8 @@ class AdminOperationsApiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Giờ cố định trong giờ nhận gọi món/đặt bàn (config/restaurant.php).
+        $this->travelTo(now()->setTime(12, 0));
         $this->seed(RestaurantSeeder::class);
     }
 
@@ -63,6 +65,10 @@ class AdminOperationsApiTest extends TestCase
     {
         $token = $this->adminToken();
         $order = Order::query()->where('trang_thai', OrderStatus::PENDING_CONFIRMATION->value)->firstOrFail();
+        if ($order->thoi_gian_nhan_du_kien) {
+            // Đơn hẹn: chỉ chạy luồng chuẩn khi đã tới giờ xuống bếp (luồng bắt đầu sớm có test riêng).
+            $order->update(['thoi_gian_nhan_du_kien' => now()->addMinutes(20)]);
+        }
 
         foreach (['CONFIRMED', 'PREPARING', 'READY'] as $status) {
             $this->withToken($token)
@@ -82,6 +88,7 @@ class AdminOperationsApiTest extends TestCase
         $token = $this->adminToken();
         $order = Order::query()->where('loai_phuc_vu', 'PICKUP')->firstOrFail();
         $order->payment->update(['phuong_thuc' => PaymentMethod::CASH]);
+        $order->update(['thoi_gian_nhan_du_kien' => now()->addMinutes(20)]);
 
         foreach (['CONFIRMED', 'PREPARING', 'READY'] as $status) {
             $this->withToken($token)
@@ -92,6 +99,7 @@ class AdminOperationsApiTest extends TestCase
         $this->withToken($token)
             ->patchJson("/api/v1/admin/orders/{$order->ma_don_hang}/fulfillment-status", [
                 'targetStatus' => 'COLLECTED',
+                'pickupCode' => $order->fresh()->ma_nhan_hang,
             ])->assertOk()
             ->assertJsonPath('data.status', 'COMPLETED')
             ->assertJsonPath('data.fulfillmentStatus', 'COLLECTED')
@@ -131,12 +139,18 @@ class AdminOperationsApiTest extends TestCase
     public function test_admin_cannot_handoff_an_unpaid_qr_delivery_to_the_driver(): void
     {
         $token = $this->adminToken();
-        $order = Order::query()->where('loai_phuc_vu', 'DELIVERY')->firstOrFail();
-        $order->update([
+        // Đơn mới chưa có khoản tiền nào trong sổ cái (sổ cái là nguồn sự thật, không phải cờ THANH_TOAN).
+        $seeded = Order::query()->where('loai_phuc_vu', 'DELIVERY')->firstOrFail();
+        $order = Order::create([
+            ...$seeded->only(['ma_tai_khoan', 'kenh', 'loai_phuc_vu', 'ten_nguoi_nhan', 'so_dien_thoai_nhan', 'dia_chi_giao_hang', 'phi_giao_hang']),
+            'ngay_dat_hang' => now(),
+            'tong_tien' => 150000,
             'trang_thai' => OrderStatus::READY,
             'trang_thai_giao_nhan' => FulfillmentStatus::AWAITING_DRIVER,
         ]);
-        $order->payment->update([
+        Payment::create([
+            'ma_don_hang' => $order->ma_don_hang,
+            'so_tien' => 150000,
             'phuong_thuc' => PaymentMethod::BANK_TRANSFER_QR,
             'trang_thai' => PaymentStatus::UNPAID,
         ]);
@@ -167,10 +181,17 @@ class AdminOperationsApiTest extends TestCase
             ->assertJsonPath('data.status', 'CONFIRMED');
 
         $payment = Payment::query()->where('trang_thai', PaymentStatus::PAID->value)->firstOrFail();
+        $body = [
+            'refundReason' => 'Khách đổi kế hoạch, quản lý duyệt hoàn tiền',
+            'amount' => (float) $payment->so_tien,
+            'method' => 'BANK_TRANSFER',
+            'referenceCode' => 'HOAN-0001',
+        ];
+        // Đơn còn hiệu lực, nhà hàng không nợ khách: hoàn phải ghi rõ là bồi hoàn (giảm khoản phải thu).
+        $this->withToken($token)->postJson("/api/v1/admin/payments/{$payment->ma_thanh_toan}/refund", $body)->assertUnprocessable();
         $this->withToken($token)
-            ->postJson("/api/v1/admin/payments/{$payment->ma_thanh_toan}/refund", [
-                'refundReason' => 'Khách đổi kế hoạch, quản lý duyệt hoàn tiền',
-            ])->assertOk()
+            ->postJson("/api/v1/admin/payments/{$payment->ma_thanh_toan}/refund", [...$body, 'refundType' => 'COMPENSATION'])
+            ->assertOk()
             ->assertJsonPath('data.status', 'REFUNDED');
 
         $this->assertDatabaseHas('THANH_TOAN', [

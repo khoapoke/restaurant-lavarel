@@ -2,12 +2,12 @@
 
 namespace App\Http\Resources\Admin;
 
+use App\Enums\DeliveryFailureReason;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
-use App\Enums\PaymentStatus;
 use App\Http\Resources\Customer\OrderItemResource;
 use App\Http\Resources\Customer\OrderPaymentResource;
 use Illuminate\Http\Request;
@@ -40,7 +40,35 @@ class AdminOrderResource extends JsonResource
             'recipientPhone' => $this->so_dien_thoai_nhan,
             'shippingAddress' => $this->dia_chi_giao_hang,
             'scheduledAt' => $this->thoi_gian_nhan_du_kien?->format('Y-m-d\TH:i:s'),
+            'isAsap' => ! $this->thoi_gian_nhan_du_kien,
+            'kitchenReleaseAt' => $this->kitchenReleaseAt()?->toIso8601String(),
+            'awaitingKitchenRelease' => $this->awaitingKitchenRelease(),
             'note' => $this->ghi_chu,
+            // Mã nhận hàng không trả cho màn quản trị: nhân viên nhập mã khách đọc để đối chiếu.
+            'hasPickupCode' => (bool) $this->ma_nhan_hang,
+            'readyAt' => $this->san_sang_luc?->toIso8601String(),
+            'handedOverAt' => $this->ban_giao_luc?->toIso8601String(),
+            'collectedBy' => $this->nguoi_nhan_thay,
+            'deliveryAttempts' => (int) $this->so_lan_giao,
+            'deliveryFailure' => $this->giao_that_bai_luc ? [
+                'reason' => $this->loai_giao_that_bai,
+                'reasonLabel' => DeliveryFailureReason::tryFrom((string) $this->loai_giao_that_bai)?->label(),
+                'note' => $this->ly_do_giao_that_bai,
+                'at' => $this->giao_that_bai_luc->toIso8601String(),
+            ] : null,
+            'cancellation' => $this->trang_thai === OrderStatus::CANCELLED ? [
+                'reason' => $this->ly_do_huy,
+                'moneyDecision' => $this->quyet_dinh_tien_huy,
+                'at' => $this->huy_luc?->toIso8601String(),
+                'by' => $this->relationLoaded('cancelledBy') ? $this->cancelledBy?->displayName() : null,
+            ] : null,
+            'handoff' => [
+                'waitMinutes' => $this->handoffWaitMinutes(),
+                'pickupDeadline' => $this->pickupDeadline()?->toIso8601String(),
+                'pickupOverdue' => $this->pickupOverdue(),
+                'driverWaitTooLong' => $this->driverWaitTooLong(),
+            ],
+            'money' => $this->whenLoaded('payment', fn (): array => $this->moneySummary()),
             'customer' => $this->whenLoaded('account', fn (): array => [
                 'accountId' => (int) $this->account->ma_tai_khoan,
                 'username' => $this->account->ten_dang_nhap,
@@ -54,14 +82,16 @@ class AdminOrderResource extends JsonResource
     }
 
     /**
-     * @return array{nextStatus: ?string, nextFulfillmentStatus: ?string, canCancel: bool, awaitingQrPayment: bool, requiresRefund: bool}
+     * @return array<string, mixed>
      */
     private function availableActions(): array
     {
         $isDineIn = $this->loai_phuc_vu === FulfillmentType::DINE_IN;
+        $money = $this->moneySummary();
         $isQrUnpaid = $this->payment
             && $this->payment->phuong_thuc === PaymentMethod::BANK_TRANSFER_QR
-            && $this->payment->trang_thai !== PaymentStatus::PAID;
+            && $money['outstanding'] > 0;
+        $ready = ! $isDineIn && $this->trang_thai === OrderStatus::READY;
 
         $nextStatus = $isDineIn ? null : match ($this->trang_thai) {
             OrderStatus::PENDING_CONFIRMATION => OrderStatus::CONFIRMED,
@@ -70,24 +100,39 @@ class AdminOrderResource extends JsonResource
             default => null,
         };
 
-        $nextFulfillment = (! $isDineIn && $this->trang_thai === OrderStatus::READY)
+        $nextFulfillment = $ready
             ? match ($this->trang_thai_giao_nhan) {
                 FulfillmentStatus::AWAITING_DRIVER => FulfillmentStatus::OUT_FOR_DELIVERY,
                 FulfillmentStatus::OUT_FOR_DELIVERY => FulfillmentStatus::DELIVERED,
                 FulfillmentStatus::AWAITING_CUSTOMER => FulfillmentStatus::COLLECTED,
+                FulfillmentStatus::DELIVERY_FAILED => FulfillmentStatus::AWAITING_DRIVER,
                 default => null,
             }
         : null;
 
+        $customerFault = $this->loai_phuc_vu === FulfillmentType::PICKUP
+            ? $this->pickupOverdue()
+            : ($this->trang_thai_giao_nhan === FulfillmentStatus::DELIVERY_FAILED
+                && in_array($this->loai_giao_that_bai, [DeliveryFailureReason::CUSTOMER_REFUSED->value, DeliveryFailureReason::CUSTOMER_UNREACHABLE->value], true));
+
+        $canCancel = ! $isDineIn
+            && $this->trang_thai->canBeCancelledByAdmin()
+            && $this->trang_thai_giao_nhan !== FulfillmentStatus::OUT_FOR_DELIVERY;
+
         return [
             'nextStatus' => $nextStatus?->name,
+            // Chuyển bếp trước giờ chuẩn bị của đơn hẹn: chỉ quản lý, bắt buộc lý do.
+            'startRequiresReason' => $nextStatus === OrderStatus::PREPARING && $this->awaitingKitchenRelease(),
             'nextFulfillmentStatus' => $nextFulfillment?->name,
-            'canCancel' => ! $isDineIn
-                && $this->trang_thai->canBeCancelledByAdmin()
-                && $this->trang_thai_giao_nhan !== FulfillmentStatus::OUT_FOR_DELIVERY,
+            'canRecordDeliveryFailure' => $ready && $this->trang_thai_giao_nhan === FulfillmentStatus::OUT_FOR_DELIVERY,
+            'canRedeliver' => $ready && $this->trang_thai_giao_nhan === FulfillmentStatus::DELIVERY_FAILED,
+            'requiresPickupVerification' => $ready && $this->trang_thai_giao_nhan === FulfillmentStatus::AWAITING_CUSTOMER,
+            'canEditRecipient' => $this->recipientEditable(),
+            'canCancel' => $canCancel,
+            'canMarkPickupNoShow' => $canCancel && $this->pickupOverdue(),
+            'canRetainMoney' => $canCancel && $customerFault && $money['amountPaid'] > 0,
             'awaitingQrPayment' => (bool) $isQrUnpaid && $this->trang_thai !== OrderStatus::CANCELLED,
-            'requiresRefund' => $this->trang_thai === OrderStatus::CANCELLED
-                && $this->payment?->trang_thai === PaymentStatus::PAID,
+            'requiresRefund' => $money['refundDue'] > 0,
         ];
     }
 }

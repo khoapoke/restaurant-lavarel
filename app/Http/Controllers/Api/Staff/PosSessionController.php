@@ -5,11 +5,15 @@ namespace App\Http\Controllers\Api\Staff;
 use App\Enums\TableStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Staff\CancelPosSessionRequest;
+use App\Http\Requests\Staff\ChangeGuestCountRequest;
+use App\Http\Requests\Staff\ChangeSessionTablesRequest;
 use App\Http\Requests\Staff\OpenPosSessionRequest;
+use App\Http\Resources\Shared\AuditLogResource;
 use App\Http\Resources\Staff\PosSessionResource;
 use App\Http\Resources\Staff\PosTableResource;
 use App\Models\DiningTable;
 use App\Models\ServiceSession;
+use App\Services\Shared\AuditLogger;
 use App\Services\Staff\PosSessionService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -60,8 +64,57 @@ class PosSessionController extends Controller
     public function cancel(CancelPosSessionRequest $request, ServiceSession $session): JsonResponse
     {
         return $this->successResponse(
-            new PosSessionResource($this->posSessionService->cancel($session, $request->validated('reason'))),
+            new PosSessionResource($this->posSessionService->cancel($session, $request->validated('reason'), $request->user())),
             'POS session cancelled successfully'
+        );
+    }
+
+    public function changeGuestCount(ChangeGuestCountRequest $request, ServiceSession $session): JsonResponse
+    {
+        return $this->successResponse(
+            new PosSessionResource($this->posSessionService->changeGuestCount($session, $request->user(), (int) $request->validated('guestCount'), $request->validated('reason'))),
+            'Guest count updated'
+        );
+    }
+
+    public function changeTables(ChangeSessionTablesRequest $request, ServiceSession $session): JsonResponse
+    {
+        return $this->successResponse(
+            new PosSessionResource($this->posSessionService->changeTables(
+                $session,
+                $request->user(),
+                $request->validated('tableIds'),
+                $request->validated('reason'),
+                $request->validated('releaseAs') ?? 'CLEANING'
+            )),
+            'Session tables updated'
+        );
+    }
+
+    /** Nhật ký thao tác của phiên: phiên, món, hóa đơn, yêu cầu duyệt (chỉ đọc). */
+    public function history(ServiceSession $session): JsonResponse
+    {
+        $session->load(['orders.items', 'invoice', 'approvals']);
+        $entities = [['SESSION', (int) $session->ma_phien]];
+        foreach ($session->orders as $order) {
+            $entities[] = ['ORDER', (int) $order->ma_don_hang];
+            foreach ($order->items as $item) {
+                $entities[] = ['ORDER_ITEM', (int) $item->ma_chi_tiet];
+            }
+        }
+        if ($session->invoice) {
+            $entities[] = ['INVOICE', (int) $session->invoice->ma_hoa_don];
+        }
+        foreach ($session->approvals as $approval) {
+            $entities[] = ['APPROVAL', (int) $approval->ma_yeu_cau_duyet];
+        }
+        if ($session->ma_dat_ban) {
+            $entities[] = ['RESERVATION', (int) $session->ma_dat_ban];
+        }
+
+        return $this->successResponse(
+            AuditLogResource::collection(app(AuditLogger::class)->forEntities($entities)),
+            'Session history retrieved'
         );
     }
 

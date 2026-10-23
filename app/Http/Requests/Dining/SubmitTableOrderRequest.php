@@ -36,6 +36,7 @@ class SubmitTableOrderRequest extends FormRequest
             'items.*.dishId' => ['required', 'integer', 'min:1'],
             'items.*.quantity' => ['required', 'integer', 'min:1', "max:{$maxQuantity}"],
             'items.*.note' => ['nullable', 'string', 'max:120'],
+            'expectedTotal' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 

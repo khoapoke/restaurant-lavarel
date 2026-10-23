@@ -26,6 +26,8 @@ class UpdateOrderStatusRequest extends FormRequest
     {
         return [
             'targetStatus' => ['required', Rule::in(array_column(OrderStatus::cases(), 'name'))],
+            // Bắt buộc khi quản lý cho đơn hẹn xuống bếp trước giờ chuẩn bị (kiểm tra trong service).
+            'reason' => ['nullable', 'string', 'min:3', 'max:255'],
         ];
     }
 }

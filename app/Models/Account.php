@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
+use App\Enums\RoleType;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -68,6 +69,26 @@ class Account extends Authenticatable
             get: fn () => $this->trang_thai,
             set: fn (AccountStatus|string $value) => ['trang_thai' => $value]
         );
+    }
+
+    /** ADMIN (vai trò 1) — quản lý được duyệt ngoại lệ, miễn tiền, hoàn tiền, thất thu. */
+    public function isAdmin(): bool
+    {
+        return (int) $this->ma_vai_tro === RoleType::ADMIN->id();
+    }
+
+    public function roleCode(): string
+    {
+        return match ((int) $this->ma_vai_tro) {
+            RoleType::ADMIN->id() => 'ADMIN',
+            RoleType::STAFF->id() => 'STAFF',
+            default => 'CUSTOMER',
+        };
+    }
+
+    public function displayName(): string
+    {
+        return $this->userProfile?->ho_ten ?? $this->ten_dang_nhap;
     }
 
     // Relationships

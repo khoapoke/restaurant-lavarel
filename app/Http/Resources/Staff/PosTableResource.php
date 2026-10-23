@@ -9,7 +9,7 @@ use App\Enums\PosSessionStatus;
 use App\Enums\ServiceRequestStatus;
 use App\Models\OrderItem;
 use App\Models\ServiceSession;
-use App\Services\Shared\TableStatusSynchronizer;
+use App\Services\Shared\ReservationSchedule;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -19,7 +19,12 @@ class PosTableResource extends JsonResource
     {
         $activeSession = $this->serviceSessions
             ->first(fn ($session) => in_array($session->trang_thai, [PosSessionStatus::OPEN, PosSessionStatus::AWAITING_PAYMENT], true));
-        $upcomingReservation = $this->relationLoaded('reservations') ? $this->reservations->first() : null;
+        $schedule = app(ReservationSchedule::class);
+        $upcomingReservation = $this->relationLoaded('reservations')
+            // Bỏ lượt đã quá mốc tự động không đến (lệnh quét sẽ đóng), ưu tiên lượt sớm nhất.
+            ? $this->reservations->first(fn ($reservation) => $schedule->autoNoShowAt($reservation)->isFuture())
+            : null;
+        $nextReservation = $activeSession ? $schedule->nextReservation((int) $this->ma_ban, now()) : null;
         $pendingCheckIn = $this->relationLoaded('visits') ? $this->visits->first() : null;
 
         return [
@@ -40,6 +45,15 @@ class PosTableResource extends JsonResource
                 'joinCode' => $activeSession->ma_tham_gia,
                 'joinCodeLocked' => $activeSession->isJoinCodeLocked(),
                 'guestName' => $activeSession->reservation?->account?->userProfile?->ho_ten,
+                'tables' => $activeSession->relationLoaded('tables') ? $activeSession->tables->pluck('ten_ban')->values() : [],
+                'expectedEndAt' => $activeSession->du_kien_ket_thuc_luc?->toIso8601String(),
+                'overdue' => (bool) $activeSession->du_kien_ket_thuc_luc?->isPast(),
+                'nextReservation' => $nextReservation ? [
+                    'reservationId' => (int) $nextReservation->ma_dat_ban,
+                    'reservationTime' => $nextReservation->thoi_gian->format('Y-m-d\TH:i:s'),
+                    'mustLeaveBy' => $nextReservation->thoi_gian->copy()->subMinutes($schedule->cleaningMinutes())->toIso8601String(),
+                    'atRisk' => $schedule->sessionBusyUntil($activeSession)->greaterThan($nextReservation->thoi_gian->copy()->subMinutes($schedule->cleaningMinutes())),
+                ] : null,
                 'live' => $this->liveStats($activeSession),
             ] : null,
             'pendingCheckIn' => $pendingCheckIn ? [
@@ -56,7 +70,20 @@ class PosTableResource extends JsonResource
                 'customerName' => $upcomingReservation->account?->userProfile?->ho_ten
                     ?? $upcomingReservation->account?->ten_dang_nhap,
                 'customerPhone' => $upcomingReservation->account?->userProfile?->so_dien_thoai,
-                'isWithinSeatingWindow' => abs(now()->diffInMinutes($upcomingReservation->thoi_gian, false)) <= TableStatusSynchronizer::SLOT_MINUTES,
+                'isWithinSeatingWindow' => $schedule->withinSeatingWindow($upcomingReservation),
+                'seatingOpensAt' => $schedule->seatingOpensAt($upcomingReservation)->toIso8601String(),
+                'holdUntil' => $schedule->holdUntil($upcomingReservation)->toIso8601String(),
+                'latestExtension' => $schedule->latestExtension($upcomingReservation)->toIso8601String(),
+                'autoNoShowAt' => $schedule->autoNoShowAt($upcomingReservation)->toIso8601String(),
+                'minutesLate' => $upcomingReservation->thoi_gian->isPast() ? (int) floor($upcomingReservation->thoi_gian->diffInMinutes(now())) : 0,
+                'holdExpired' => $schedule->holdExpired($upcomingReservation),
+                'canExtend' => ! $schedule->holdExpired($upcomingReservation) && $schedule->holdUntil($upcomingReservation)->lessThan($schedule->latestExtension($upcomingReservation)) && $upcomingReservation->thoi_gian->copy()->subMinutes(15)->isPast(),
+                'canMarkNoShow' => $schedule->holdExpired($upcomingReservation),
+                'extension' => $upcomingReservation->gia_han_den ? [
+                    'until' => $upcomingReservation->gia_han_den->toIso8601String(),
+                    'reason' => $upcomingReservation->ly_do_gia_han,
+                    'by' => $upcomingReservation->extendedBy?->displayName(),
+                ] : null,
             ] : null,
         ];
     }
@@ -83,7 +110,7 @@ class PosTableResource extends JsonResource
         $requests = $session->relationLoaded('serviceRequests') ? $session->serviceRequests : collect();
 
         return [
-            'subTotal' => round((float) $items->sum(fn (OrderItem $item) => (float) $item->don_gia * (int) $item->so_luong), 2),
+            'subTotal' => round((float) $items->sum(fn (OrderItem $item) => $item->billedAmount()), 2),
             'itemCount' => (int) $items->where('trang_thai_bep', '!=', KitchenItemStatus::DRAFT)->sum('so_luong'),
             'draftCount' => (int) $items->where('trang_thai_bep', KitchenItemStatus::DRAFT)->sum('so_luong'),
             'pendingCount' => (int) $working->sum('so_luong'),

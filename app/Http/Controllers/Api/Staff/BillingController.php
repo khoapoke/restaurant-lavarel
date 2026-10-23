@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Staff;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Staff\ClosePosSessionRequest;
 use App\Http\Requests\Staff\CreatePaymentRequest;
+use App\Http\Requests\Staff\ReasonOnlyRequest;
 use App\Http\Resources\Staff\InvoiceResource;
 use App\Http\Resources\Staff\PosSessionResource;
 use App\Models\Invoice;
@@ -27,10 +28,10 @@ class BillingController extends Controller
         return $this->successResponse(new InvoiceResource($invoice), 'Invoice ready', 201);
     }
 
-    public function reopen(ServiceSession $session): JsonResponse
+    public function reopen(Request $request, ServiceSession $session): JsonResponse
     {
         return $this->successResponse(
-            new PosSessionResource($this->billingService->reopen($session)),
+            new PosSessionResource($this->billingService->reopen($session, $request->user(), $request->input('reason'))),
             'Invoice voided. The session is open for more orders.'
         );
     }
@@ -46,9 +47,26 @@ class BillingController extends Controller
         );
     }
 
+    /** ADMIN kết thúc phiên thất thu (khách bỏ đi); STAFF dùng yêu cầu duyệt SESSION_WRITE_OFF. */
+    public function finishWithoutCharge(ReasonOnlyRequest $request, ServiceSession $session): JsonResponse
+    {
+        return $this->successResponse(
+            new PosSessionResource($this->billingService->finishWithoutCharge($session, $request->user(), $request->validated('note'))),
+            'Session finished without charge'
+        );
+    }
+
+    public function writeOff(ReasonOnlyRequest $request, ServiceSession $session): JsonResponse
+    {
+        return $this->successResponse(
+            new PosSessionResource($this->billingService->writeOff($session, $request->user(), $request->validated('note'))),
+            'Session closed as unpaid'
+        );
+    }
+
     public function close(ClosePosSessionRequest $request, ServiceSession $session): JsonResponse
     {
-        $closed = $this->billingService->close($session, (int) $request->validated('expectedVersion'));
+        $closed = $this->billingService->close($session, (int) $request->validated('expectedVersion'), $request->user());
 
         return $this->successResponse(new PosSessionResource($closed), 'POS session closed successfully');
     }

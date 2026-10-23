@@ -1011,3 +1011,129 @@ Không trả `tableId`, `sessionId`, thông tin nhân viên hay dữ liệu khá
 
 ### D.4. Lệnh demo
 `php artisan dining:demo [--rotate] [--json]` — chỉ chạy khi không phải production và `LIVE_DINING_DEMO_ENABLED=true`. Tạo (nếu thiếu) bàn `config('dining.demo.table_name')` (mặc định `Bàn L01`), đóng phiên đã thanh toán hoặc hủy phiên chưa thanh toán của **riêng bàn đó**, hết hạn yêu cầu nhận bàn, đưa bàn về `AVAILABLE` và in link QR. Nếu một phiên đang ghép Bàn L01 với bàn khác, lệnh **từ chối và không thay đổi dữ liệu** (exit code 1).
+
+
+---
+
+## PHẦN E: NGOẠI LỆ NGHIỆP VỤ (ADR-023 → ADR-027)
+
+Phong bì phản hồi giữ nguyên. Lỗi nghiệp vụ kèm dữ liệu (`DomainConflictException`) đặt chi tiết trong `errors`,
+ví dụ `409 { "message": "Prices changed …", "errors": { "reason": "PRICE_CHANGED", "expectedTotal": 90000, "currentTotal": 95000, "prices": [{ "dishId": 1, "unitPrice": 47500 }] } }`.
+Quyền: `role:STAFF,ADMIN` cho `/staff/*` trừ khi ghi ADMIN; `/admin/*` chỉ ADMIN.
+
+### E.1. Sửa món & bếp
+
+| Method & path | Body | Ghi chú |
+|---|---|---|
+| `POST /staff/pos/order-items/{item}/void` | `reason` (ItemVoidReason), `note` (3–255), `quantity?`, `waive?` | SENT/QUEUED: STAFF. Đã nấu: ADMIN (STAFF 403). Trả `PosOrderItem` |
+| `POST /staff/pos/order-items/{item}/waive` | `note` | ADMIN, miễn tiền món còn tính tiền |
+| `POST /staff/pos/order-items/{item}/remake` | `reason` (lỗi nhà hàng), `note` | 201, dòng `lineType=REMAKE`, `billedQuantity=0` |
+| `POST /staff/pos/order-items/{item}/exchange` | `dishId`, `quantity`, `reason`, `note`, `waive?` | 201, dòng nháp `lineType=EXCHANGE` |
+| `POST /staff/pos/order-items/{item}/split` | `quantity` (< số phần) | 201, dòng tách |
+| `POST /staff/kitchen/items/{item}/reject` | `reason` (`OUT_OF_STOCK|RESTAURANT_MISTAKE|DAMAGED`), `note`, `markSoldOut?` | Trả `KitchenItem` `status=REJECTED` |
+| `POST /staff/kitchen/items/{item}/undo` | — | ≤ 120 giây, chưa có bước tiếp; 409 nếu hết hạn |
+| `PATCH /staff/kitchen/items/{item}/status` | `targetStatus` | Món của đơn hẹn giờ chưa tới giờ xuống bếp (`kitchenReleaseAt`) → 409 kể cả gọi thẳng API |
+| `GET /staff/kitchen/items` | — | Thêm `upcoming[]` (đơn hẹn đã xác nhận, chưa tới giờ xuống bếp), `undoWindowSeconds`; mỗi món thêm `previousStatus`, `canUndo`, `undoUntil`, `lineType`, `originalItemId`, `voidReason`, `isAsap` |
+
+`PosOrderItem` thêm: `billedQuantity`, `subTotal` (= đơn giá × số phần tính tiền), `lineType`, `originalItemId`, `voidReason`, `voidReasonLabel`, `voidNote`, `voidedAt`, `waived`, `requiresApprovalToVoid`.
+
+### E.2. Yêu cầu duyệt
+
+| Method & path | Body | Ghi chú |
+|---|---|---|
+| `GET /staff/approvals?status=PENDING&sessionId=` | — | Danh sách (tối đa 50) |
+| `POST /staff/approvals` | `type` (`ITEM_VOID|SEAT_OUTSIDE_WINDOW|SESSION_WRITE_OFF`), `targetId`, `reason`, `payload{reason?, quantity?, waive?, tableIds?, guestCount?, relocationReason?}` | 201; gửi lại khi đang chờ trả yêu cầu cũ |
+| `POST /staff/approvals/{id}/cancel` | — | Người gửi rút |
+| `POST /staff/approvals/{id}/approve` | `note?` | ADMIN; thực hiện thao tác trong cùng transaction |
+| `POST /staff/approvals/{id}/reject` | `note` | ADMIN |
+
+`Approval`: `approvalId`, `type`, `label`, `status`, `entity`, `targetId`, `sessionId`, `tableNames`, `payload`, `reason`, `requestedBy`, `requestedById`, `decidedBy`, `decisionNote`, `createdAt`, `decidedAt`.
+
+### E.3. Phiên phục vụ & đặt bàn tại quầy
+
+| Method & path | Body | Ghi chú |
+|---|---|---|
+| `POST /staff/pos/sessions` | thêm `overrideReason?` (ADMIN, ngoài khung giờ), `relocationReason?` (bàn khác bàn đặt), `releaseReservationId?` (nhường bàn sau hạn giữ) | STAFF ngoài khung → 403; vượt sức chứa → 422; ngoài 10:00–22:00 → 409 |
+| `PATCH /staff/pos/sessions/{session}/guest-count` | `guestCount`, `reason?` | Trong sức chứa |
+| `POST /staff/pos/sessions/{session}/tables` | `tableIds[]`, `reason`, `releaseAs?` (`CLEANING|AVAILABLE|MAINTENANCE`) | Chuyển/ghép bàn |
+| `GET /staff/pos/sessions/{session}/history` | — | Nhật ký phiên, món, hóa đơn, yêu cầu duyệt, lượt đặt |
+| `POST /staff/pos/sessions/{session}/write-off` | `note` | ADMIN; 409 nếu không còn thiếu |
+| `POST /staff/pos/sessions/{session}/reopen` | `reason?` | Bản hóa đơn hiện tại VOID |
+| `POST /staff/pos/sessions/{session}/finish-without-charge` | `note` (lý do) | STAFF/ADMIN. Chỉ khi phiên OPEN, mọi món đã xuống bếp bị hủy/từ chối (0 phần tính tiền), không món nháp, không hóa đơn còn hiệu lực, chưa nhận tiền; không thì 409 kèm hướng dẫn. Trả `PosSession` `status=CLOSED`, `endType=NO_CHARGE`; bàn → CLEANING |
+| `POST /staff/pos/reservations/{reservation}/extend` | `minutes` (5–30), `reason` | Trả `AdminReservation`. 409 nếu chạm lượt đặt kế tiếp hoặc bàn đang có phiên khách khác trong khoảng giữ mới ("The table is in use by session #… Seat this booking at another table instead.") |
+| `POST /staff/pos/reservations/{reservation}/no-show` | `note` | Chỉ sau hạn giữ chỗ |
+
+`PosSession` thêm `expectedEndAt`, `endType`, `writeOff{amount, reason}`, `approvals[]`. Sơ đồ bàn: `activeSession` thêm `tables`, `expectedEndAt`, `overdue`, `nextReservation{reservationId, reservationTime, mustLeaveBy, atRisk}`; `upcomingReservation` thêm `seatingOpensAt`, `holdUntil`, `latestExtension`, `autoNoShowAt`, `minutesLate`, `holdExpired`, `canExtend`, `canMarkNoShow`, `extension`.
+
+### E.4. Hóa đơn & thanh toán tại POS
+
+- `POST /staff/invoices/{invoice}/payments`: `method`, `amount` (> 0, ≤ còn thiếu với tiền mặt), `cashTendered?`, `transactionCode` (bắt buộc ≥ 6 ký tự với chuyển khoản). Thiếu → hóa đơn vẫn `OPEN`, `outstanding` > 0. Header `Idempotency-Key`: gửi lại cùng khóa cùng nội dung trả kết quả cũ, không ghi thêm; cùng khóa khác `amount`/`method`/hóa đơn → 409. Frontend giữ khóa + nội dung của khoản đang gửi đến khi có phản hồi nghiệp vụ.
+- `Invoice` thêm `version`, `invoiceNumber` (`HD{id}-V{n}`), `amountPaid`, `outstanding`, `writtenOffAmount`, `refundDue`, `versions[]`; `qr` mã hóa số còn thiếu với nội dung `HD{id}V{n} THANH TOAN`.
+
+### E.5. Webhook
+
+`POST /webhooks/payment-callback` (HMAC `X-Signature`) luôn trả 200 khi đã ghi sổ: `data{transactionId, orderId, duplicateCallback, appliedAmount, reconciliation, flag, status: APPLIED|DUPLICATE_CALLBACK|RECORDED_FOR_REVIEW}`.
+
+- Định danh khoản chuyển: `BANK:{ngân hàng}|{tài khoản nhận}|{mã}`. Ngân hàng lấy từ `gateway`/`provider` (chuẩn hóa theo `payments.bank_aliases`; nhãn chung như `VIETQR`, `NAPAS`, `MANUAL` bị bỏ qua), tài khoản từ `accountNumber`/`account`. Tài khoản nhận đã cấu hình luôn quy về ngân hàng đã cấu hình → xác nhận tay, POS và webhook của cùng khoản tiền trả `DUPLICATE_CALLBACK`. Cùng mã ở ngân hàng/tài khoản khác là khoản khác.
+- Ngân hàng nêu rõ luôn được dùng, không suy ra từ số tài khoản: `gateway: Vietcombank` + `accountNumber` trùng dãy số tài khoản cấu hình (MB) là khoản khác, `duplicateCallback=false`, giao dịch `NEEDS_REVIEW` kèm ghi chú. Cùng mã ở định danh khác mà một bên thiếu ngân hàng/tài khoản → ghi riêng, `NEEDS_REVIEW`.
+- Đích từ `orderId`/`invoiceId` hoặc nội dung `DH{id}`/`HD{id}V{n}` không tồn tại → vẫn 200, `status=RECORDED_FOR_REVIEW`, `flag=UNKNOWN_TARGET` (không còn 500).
+
+### E.6. Quản trị thanh toán
+
+| Method & path | Body | Ghi chú |
+|---|---|---|
+| `GET /admin/payments?attention=1` | — | Thêm `amountPaid`, `amountRefunded`, `outstanding`, `refundDue`, `paidAt`, `orderTotal`, `payableAmount` (= tổng đơn − bồi hoàn), `compensationAmount`, `cancellationDecision` |
+| `POST /admin/payments/{id}/confirm` | `transactionCode` (≥ 6), `amount?`, `receivedAt?`, `note?` | Gộp với callback cùng định danh; mã đã dùng cho đơn khác → 409. Đơn đã đủ tiền: khoản mới vẫn được ghi (cờ `DUPLICATE`, `NEEDS_REVIEW`, không tính doanh thu); phản hồi thêm `lastReceipt{transactionId, amount, applied, flag, reconciliation}` |
+| `POST /admin/payments/{id}/refund` | `refundReason` (≥ 5), `amount`, `method` (`BANK_TRANSFER|CASH|OTHER`), `referenceCode`, `refundedAt?`, `refundType?` (`REFUND` mặc định \| `COMPENSATION`); header `Idempotency-Key` (khuyến nghị) | Ghi nhận đã hoàn theo đơn (có thể trải nhiều giao dịch). Phần vượt `refundDue` trên đơn còn hiệu lực phải gửi `refundType=COMPENSATION` (422 nếu không) — giảm khoản phải thu, hóa đơn giữ PAID. Gửi lại cùng khóa hoặc cùng `referenceCode` + số tiền + hình thức → 200 trả các dòng cũ; khác nội dung → 409 |
+| `GET /admin/payments/transactions?reconciliation=NEEDS_REVIEW&keyword=&orderId=` | — | `MoneyTransaction` kèm `allocations[]`, `refunds[]` |
+| `POST /admin/payments/transactions/{id}/refunds` | như trên | Ưu tiên hoàn phần chưa phân bổ; cùng quy tắc bồi hoàn/gửi lại |
+| `POST /admin/payments/transactions/{id}/allocate` | `orderId`, `amount?`, `note` | Áp tiền chưa phân bổ vào đơn |
+| `POST /admin/payments/transactions/{id}/resolve` | `note` | Chỉ khi không còn tiền chưa phân bổ |
+| `POST /admin/payments/reconcile` | `paymentIds?` | Thêm `transactionsNeedingReview`, `note`; lý do lệch `SUMMARY_OUT_OF_SYNC|REFUND_DUE|AMOUNT_MISMATCH|ORDER_MISSING` |
+
+`MoneyTransaction` thêm `refundDueAmount` (phần có thể hoàn mà không cần bồi hoàn: chưa phân bổ + phần nhà hàng đang nợ khách trên các đơn đã áp). Dòng hoàn (`refunds[]`) thêm `type` (`REFUND|COMPENSATION`), `fromAllocated` (0 = lấy từ tiền chưa phân bổ). Một yêu cầu hoàn có thể sinh nhiều dòng: mỗi đơn bị rút tiền một dòng (`orderId` của đơn đó), phần chưa phân bổ một dòng; tất cả cùng khóa yêu cầu nên gửi lại so khớp theo tổng.
+
+### E.7. Quản trị đơn hàng (giao/tự lấy)
+
+| Method & path | Body | Ghi chú |
+|---|---|---|
+| `PATCH /admin/orders/{id}/fulfillment-status` | `targetStatus`; `DELIVERY_FAILED`: `failureReason`, `note`; `COLLECTED`: `pickupCode` hoặc `verifiedPhone`, `collectedBy?`; `AWAITING_DRIVER`: `note?` (giao lại) | Tiền mặt ghi sổ khi `DELIVERED/COLLECTED` |
+| `POST /admin/orders/{id}/cancel` | `cancelReason`, `reasonType?`, `moneyDecision?` (`REFUND_DUE|RETAINED`) | Không khi đang giao |
+| `PATCH /admin/orders/{id}/recipient` | `recipientName?`, `recipientPhone?`, `shippingAddress?`, `reason` | Trước khi giao tài xế |
+| `GET /admin/orders/{id}/history` | — | Nhật ký đơn |
+| `GET /admin/orders?fulfillmentStatus=` | — | Lọc bước giao nhận |
+| `PATCH /admin/orders/{id}/status` | `targetStatus`, `reason?` | Chuyển đơn hẹn giờ sang `PREPARING`/`READY` trước `kitchenReleaseAt` cần `reason` (422 nếu thiếu), nhật ký `ORDER_STARTED_EARLY` |
+
+`AdminOrder` thêm `kitchenReleaseAt`, `awaitingKitchenRelease`, `isAsap`, `hasPickupCode` (không trả mã), `readyAt`, `handedOverAt`, `collectedBy`, `deliveryAttempts`, `deliveryFailure{reason, reasonLabel, note, at}`, `cancellation{reason, moneyDecision, at, by}`, `handoff{waitMinutes, pickupDeadline, pickupOverdue, driverWaitTooLong}`, `money{amountPaid, amountRefunded, outstanding, refundDue}`; `availableActions` thêm `canRecordDeliveryFailure`, `canRedeliver`, `requiresPickupVerification`, `canEditRecipient`, `canMarkPickupNoShow`, `canRetainMoney`, `startRequiresReason`.
+
+### E.8. Quản trị đặt bàn
+
+| Method & path | Body | Ghi chú |
+|---|---|---|
+| `PATCH /admin/reservations/{id}/status` | `targetStatus`, `reason?` (bắt buộc với `REJECTED/CANCELLED`), `internalNote?` | `COMPLETED` → 409; `NO_SHOW` sau hạn giữ; `adminNote` cũ vẫn nhận như `reason` |
+| `GET /admin/reservations/{id}` | — | Chi tiết |
+| `PUT /admin/reservations/{id}` | `reservationTime?`, `tableId?`, `guestCount?`, `internalNote?`, `reason` | Sửa có kiểm tra trùng |
+| `GET /admin/reservations/{id}/history` | — | Nhật ký |
+
+`AdminReservation` thêm `expectedEndTime`, `storedStatus`, `internalNote`, `actualGuestCount`, `seatedTables`, `hold{holdUntil, seatingOpensAt, autoNoShowAt, holdExpired}`, `extension{until, reason, by}`, `resolution{at, reason, by}`; `status` là trạng thái hiệu lực (PENDING quá giờ hiện `EXPIRED`, quá hạn tự động hiện `NO_SHOW`).
+
+### E.9. Khách hàng
+
+- `POST /customer/orders/checkout`: thêm `expectedTotal?` (lệch → 409 `PRICE_CHANGED`), `scheduledAt` cho cả giao và tự lấy (tương lai, ≤ 7 ngày, 10:00–22:00); không hẹn khi bếp đóng → 409.
+- `PATCH /customer/orders/{id}/recipient`: `recipientName?`, `recipientPhone?`, `shippingAddress?` (trước khi giao tài xế).
+- `Order` thêm `isAsap`, `pickupCode` (chỉ đơn tự lấy của chính khách), `readyAt`, `handedOverAt`, `deliveryAttempts`, `deliveryFailure{reason, reasonLabel, at}`, `cancellation{reason, at, moneyDecision}`, `money{…}`, `canEditRecipient`; dòng món thêm `billedQuantity`, `kitchenStatus`, `cancelled`, `cancelReason` (nhãn, không ghi chú nội bộ).
+- `POST /customer/payments/{id}/qr|retry`: đơn tiền mặt đã xác nhận → 409 "Payment method is locked once the order is confirmed".
+- Đặt bàn: giờ đến 10:00–21:30, ≤ 3 lượt tương lai, không trùng giờ của chính mình, bàn đang có khách bị loại theo giờ dự kiến; `Reservation` thêm `isSeated`, `holdUntil`, `statusReason`; không còn trả ghi chú nội bộ.
+
+### E.10. QR tại bàn
+
+- `POST /public/dine/{token}/orders`: thêm `expectedTotal?`; ngoài 10:00–22:00 → 409; lượt đã nhận (cùng `Idempotency-Key`) vẫn trả 200 `created:false`.
+- Trạng thái bàn: `entry.movedTo{tableNames, tableToken}` khi phiên của thẻ đã chuyển bàn, `entry.orderingOpen`, `entry.lastOrderAt`; món trong lượt thêm `billedQuantity`, `cancelReason` (nhãn), `lineType`.
+
+### E.11. Báo cáo
+
+`GET /admin/reports/dashboard`: thêm `finance{salesValue, cancelledOrdersCount, cancelledOrdersValue, moneyReceived, moneyReceivedByMethod, undatedLegacyReceived, appliedToSales, appliedByMethod, averageOrderValue, refunded, undatedLegacyRefunded, netReceived, unallocatedBalance, refundDueBalance, outstandingBalance, voidedValue, waivedValue, remakeValue, writeOffValue, compensationValue, formula}` (`salesValue` đã trừ bồi hoàn); `topSellingDishes[]` mỗi dòng `totalSold` (số phần tính tiền), `revenue` (theo `billedAmount`), `preparedQuantity` (phần bếp làm xong/phục vụ), `freeQuantity` (làm lại/miễn) — món không có phần tính tiền không vào danh sách; `attention` thêm `refundsPending`, `transactionsToReview`, `approvalsPending`, `deliveryFailed`, `driverWaitTooLong`, `pickupOverdue`. `revenue.*` giữ tương thích.
+
+### E.12. Lệnh
+
+- `php artisan dining:reservations:sweep` — hết hạn PENDING, tự no-show, làm mới giữ bàn; lên lịch 5 phút/lần, `withoutOverlapping`.

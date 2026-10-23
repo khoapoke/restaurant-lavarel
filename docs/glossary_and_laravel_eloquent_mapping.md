@@ -220,3 +220,63 @@ class Account extends Authenticatable
 | **`THANH_TOAN`** | `ma_giao_dich`, `log_callback`, `ly_do_hoan_tien` | • `$table->string('ma_giao_dich', 100)->nullable();` (`transactionCode`)<br>• `$table->text('log_callback')->nullable();` (`callbackLog`)<br>• `$table->string('ly_do_hoan_tien', 500)->nullable();` (`refundReason`) |
 
 > **Mẹo dự phòng (Zero-Alter Fallback):** Nếu giảng viên yêu cầu giữ nguyên 100% câu lệnh `CREATE TABLE` trong file `.sql` và không chạy thêm `ALTER TABLE`, bạn có thể dùng `Attribute::make()` của Laravel để parse/serialize JSON các trường mở rộng (`ingredients`, `allergens`, `weatherTags`, `isAvailable`) ngay bên trong cột `MON_AN.mo_ta` (`NVARCHAR(MAX)`).
+
+
+## 6. Bổ sung schema & enum cho ngoại lệ nghiệp vụ (ADR-023 → ADR-027)
+
+Migration (chạy bằng `php artisan migrate`, có `down`, không xóa dữ liệu): `2026_10_21_121710` → `2026_10_21_121719`.
+
+### 6.1. Bảng mới
+
+| Bảng | Model | Ý nghĩa | Cột chính |
+| :--- | :--- | :--- | :--- |
+| `GIAO_DICH_TIEN` | `MoneyTransaction` | Mỗi khoản tiền thật nhận được | `nguon`, `nha_cung_cap`, `tai_khoan_nhan`, `ma_tham_chieu`, `khoa_duy_nhat` (unique), `idempotency_key` (unique), `phuong_thuc`, `so_tien`, `so_tien_da_phan_bo`, `so_tien_da_hoan`, `noi_dung`, `ma_don_hang_muc_tieu`, `ma_hoa_don_muc_tieu`, `phien_ban_hoa_don`, `trang_thai_doi_soat`, `canh_bao`, `ghi_chu_doi_soat`, `ma_nguoi_doi_soat`, `doi_soat_luc`, `nhan_luc`, `ghi_nhan_luc`, `ma_nguoi_ghi_nhan`, `du_lieu_goc`, `la_du_lieu_lich_su` |
+| `PHAN_BO_THANH_TOAN` | `PaymentAllocation` | Áp tiền vào đơn/hóa đơn | `ma_giao_dich_tien`, `ma_don_hang`, `ma_hoa_don`, `phien_ban_hoa_don`, `so_tien` (âm khi đảo), `loai` (`APPLY`/`REFUND_REVERSAL`), `ma_hoan_tien`, `ma_nguoi_thuc_hien`, `tao_luc` |
+| `HOAN_TIEN` | `Refund` | Ghi nhận đã hoàn tiền | `ma_giao_dich_tien`, `ma_don_hang`, `so_tien`, `so_tien_tu_phan_bo`, `phuong_thuc`, `ma_chung_tu`, `ly_do`, `ma_nguoi_thuc_hien`, `hoan_luc`, `ghi_nhan_luc`, `la_du_lieu_lich_su` |
+| `HOA_DON_PHIEN_BAN` | `InvoiceVersion` | Lịch sử phiên bản hóa đơn | `ma_hoa_don`, `phien_ban` (unique cùng hóa đơn), `tong_thanh_toan`, `trang_thai`, `tao_luc`, `huy_luc`, `ly_do_huy`, `ma_nguoi_huy` |
+| `NHAT_KY_THAO_TAC` | `AuditLog` | Nhật ký thao tác chỉ đọc | `ma_tai_khoan`, `vai_tro`, `hanh_dong`, `doi_tuong`, `ma_doi_tuong`, `ly_do`, `truoc` (JSON), `sau` (JSON), `tao_luc` |
+| `YEU_CAU_DUYET` | `ApprovalRequest` | Yêu cầu quản lý duyệt | `loai`, `trang_thai`, `doi_tuong`, `ma_doi_tuong`, `ma_phien`, `du_lieu` (JSON), `ly_do`, `ma_nguoi_yeu_cau`, `ma_nguoi_duyet`, `ghi_chu_duyet`, `tao_luc`, `xu_ly_luc` |
+
+### 6.2. Cột mới trên bảng cũ
+
+| Bảng | Cột |
+| :--- | :--- |
+| `HOA_DON` | `phien_ban` (mặc định 1), `so_tien_that_thu` |
+| `THANH_TOAN` | `so_tien_da_thu`, `so_tien_da_hoan`, `thanh_toan_luc`, `cap_nhat_luc` |
+| `CHI_TIET_DON_HANG` | `so_luong_tinh_tien`, `loai_dong`, `ma_chi_tiet_goc`, `loai_ly_do_huy`, `ly_do_huy`, `mien_tien`, `ma_nguoi_huy`, `ma_nguoi_mien_tien`, `huy_luc`, `trang_thai_bep_truoc`, `ma_nguoi_cap_nhat_bep` |
+| `DON_HANG` | `ma_nhan_hang`, `san_sang_luc`, `ban_giao_luc`, `nguoi_nhan_thay`, `loai_giao_that_bai`, `ly_do_giao_that_bai`, `giao_that_bai_luc`, `so_lan_giao`, `ly_do_huy`, `quyet_dinh_tien_huy`, `ma_nguoi_huy`, `huy_luc` |
+| `DAT_BAN` | `ghi_chu_noi_bo`, `gia_han_den`, `ly_do_gia_han`, `ma_nguoi_gia_han`, `xu_ly_luc`, `ma_nguoi_xu_ly`, `ly_do_xu_ly`; index (`trang_thai`, `thoi_gian`) |
+| `PHIEN_PHUC_VU` | `du_kien_ket_thuc_luc`, `kieu_ket_thuc`, `so_tien_that_thu`, `ly_do_that_thu`, `ma_nguoi_duyet_that_thu` |
+
+Backfill: thanh toán PAID/REFUNDED cũ → giao dịch `LEGACY`; món đã hủy/từ chối → `so_luong_tinh_tien = 0`, còn lại = `so_luong`; đơn tự lấy cũ được cấp mã nhận hàng; dòng `[ADMIN] …` trong ghi chú đặt bàn chuyển sang `ghi_chu_noi_bo`; phiên cũ có `du_kien_ket_thuc_luc`.
+
+### 6.3. Enum mới / mở rộng (API trả `name`)
+
+| Enum | Giá trị |
+| :--- | :--- |
+| `MoneySource` | `WEBHOOK`, `MANUAL`, `POS`, `COD`, `LEGACY` |
+| `ReconciliationStatus` | `MATCHED`, `NEEDS_REVIEW`, `RESOLVED` |
+| `MoneyFlag` | `OVERPAID`, `UNDERPAID`, `DUPLICATE`, `ORDER_CANCELLED`, `INVOICE_STALE`, `SESSION_CLOSED`, `UNKNOWN_TARGET`, `NO_REFERENCE` |
+| `AllocationType` | `APPLY`, `REFUND_REVERSAL` |
+| `ApprovalType` / `ApprovalStatus` | `ITEM_VOID`, `SEAT_OUTSIDE_WINDOW`, `SESSION_WRITE_OFF` / `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED` |
+| `ItemVoidReason` | `CUSTOMER_CHANGED_MIND`, `ORDER_ENTRY_ERROR`, `OUT_OF_STOCK`, `RESTAURANT_MISTAKE`, `DAMAGED`, `NOT_SERVED` |
+| `OrderLineType` | `NORMAL`, `REMAKE`, `EXCHANGE` |
+| `DeliveryFailureReason` | `CUSTOMER_UNREACHABLE`, `CUSTOMER_REFUSED`, `DRIVER_CANCELLED`, `ADDRESS_PROBLEM`, `OTHER` |
+| `CancellationMoneyDecision` | `REFUND_DUE`, `RETAINED` |
+| `SessionEndType` | `NORMAL`, `WRITE_OFF` |
+| `PaymentStatus` (+) | `PARTIALLY_PAID` ("Thanh toán một phần"), `PARTIALLY_REFUNDED` ("Hoàn một phần") |
+| `InvoiceStatus` (+) | `WRITTEN_OFF` |
+| `ReservationStatus` (+) | `EXPIRED` ("Hết hạn"), `NO_SHOW` ("Không đến") |
+| `FulfillmentStatus` (+) | `DELIVERY_FAILED` |
+
+### 6.4. Thuật ngữ
+
+| Thuật ngữ | Nghĩa |
+| :--- | :--- |
+| Hạn giữ chỗ | Giờ hẹn + 20 phút, hoặc mốc đã gia hạn |
+| Nhường bàn | Ghi lượt quá hạn là không đến và mở phiên mới cho khách khác trong cùng một thao tác |
+| Giờ phải trả bàn | `du_kien_ket_thuc_luc` của phiên, bị cắt trước lượt đặt kế tiếp − 15 phút |
+| Tiền chưa phân bổ | Phần tiền đã nhận chưa áp vào đơn nào và chưa hoàn |
+| Phải hoàn | Tiền nhà hàng đang nợ khách (đơn hủy, trả dư) chưa được ghi nhận hoàn |
+| Thất thu | Phần còn thiếu khi quản lý đóng phiên khách bỏ về |
+| Ghi nhận đã hoàn tiền | Lưu chứng từ khoản hoàn đã chuyển bên ngoài; hệ thống không chuyển tiền |

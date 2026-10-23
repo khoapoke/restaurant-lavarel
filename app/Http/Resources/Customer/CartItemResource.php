@@ -17,7 +17,7 @@ class CartItemResource extends JsonResource
         $quantity = (int) ($this->pivot?->so_luong ?? 0);
         $unitPrice = (float) $this->price;
         $subTotal = round($unitPrice * $quantity, 2);
-        $isAvailable = (bool) ($this->isAvailable && $this->isVisible && !$this->isDeleted);
+        $isAvailable = $this->isOrderable();
 
         return [
             'dishId' => (int) $this->dishId,

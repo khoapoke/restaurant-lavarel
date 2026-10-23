@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Customer;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\CancelOrderRequest;
 use App\Http\Requests\Customer\CheckoutOrderRequest;
+use App\Http\Requests\Customer\UpdateOrderRecipientRequest;
 use App\Http\Resources\Customer\OrderResource;
 use App\Services\Customer\OrderService;
 use App\Traits\ApiResponse;
@@ -25,9 +26,6 @@ class OrderController extends Controller
 
     /**
      * Get customer order history (ORD-04).
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function index(Request $request): JsonResponse
     {
@@ -47,10 +45,6 @@ class OrderController extends Controller
 
     /**
      * Get order details by ID (ORD-05).
-     *
-     * @param Request $request
-     * @param int $orderId
-     * @return JsonResponse
      */
     public function show(Request $request, int $orderId): JsonResponse
     {
@@ -66,9 +60,6 @@ class OrderController extends Controller
 
     /**
      * Checkout active cart to create order (ORD-01, ORD-02, ORD-03).
-     *
-     * @param CheckoutOrderRequest $request
-     * @return JsonResponse
      */
     public function checkout(CheckoutOrderRequest $request): JsonResponse
     {
@@ -83,11 +74,17 @@ class OrderController extends Controller
     }
 
     /**
+     * Khách sửa người nhận/SĐT/địa chỉ trước khi giao tài xế (DLV-01).
+     */
+    public function updateRecipient(UpdateOrderRecipientRequest $request, int $orderId): JsonResponse
+    {
+        $order = $this->orderService->updateRecipient($request->user(), $orderId, $request->validated());
+
+        return $this->successResponse(new OrderResource($order), 'Order recipient updated successfully');
+    }
+
+    /**
      * Customer cancels order (ORD-06).
-     *
-     * @param CancelOrderRequest $request
-     * @param int $orderId
-     * @return JsonResponse
      */
     public function cancel(CancelOrderRequest $request, int $orderId): JsonResponse
     {

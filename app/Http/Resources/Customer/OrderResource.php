@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Customer;
 
+use App\Enums\DeliveryFailureReason;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\OrderStatus;
@@ -51,6 +52,23 @@ class OrderResource extends JsonResource
             'shippingAddress' => $this->shippingAddress,
             'scheduledAt' => $this->thoi_gian_nhan_du_kien?->format('Y-m-d\TH:i:s'),
             'orderNote' => $this->ghi_chu,
+            'isAsap' => ! $this->thoi_gian_nhan_du_kien,
+            'pickupCode' => $fulfillmentType === FulfillmentType::PICKUP->name ? $this->ma_nhan_hang : null,
+            'readyAt' => $this->san_sang_luc?->toIso8601String(),
+            'handedOverAt' => $this->ban_giao_luc?->toIso8601String(),
+            'deliveryAttempts' => (int) $this->so_lan_giao,
+            'deliveryFailure' => $this->giao_that_bai_luc ? [
+                'reason' => $this->loai_giao_that_bai,
+                'reasonLabel' => DeliveryFailureReason::tryFrom((string) $this->loai_giao_that_bai)?->label(),
+                'at' => $this->giao_that_bai_luc->toIso8601String(),
+            ] : null,
+            'cancellation' => $statusName === OrderStatus::CANCELLED->name ? [
+                'reason' => $this->ly_do_huy,
+                'at' => $this->huy_luc?->toIso8601String(),
+                'moneyDecision' => $this->quyet_dinh_tien_huy,
+            ] : null,
+            'money' => $this->moneySummary(),
+            'canEditRecipient' => $this->recipientEditable(),
             'payment' => $payment ? new OrderPaymentResource($payment) : null,
             'items' => OrderItemResource::collection($dishes),
         ];

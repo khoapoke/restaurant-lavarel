@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\DeliveryFailureReason;
 use App\Enums\FulfillmentStatus;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -23,6 +24,11 @@ class UpdateFulfillmentStatusRequest extends FormRequest
     {
         return [
             'targetStatus' => ['required', Rule::enum(FulfillmentStatus::class)],
+            'failureReason' => ['required_if:targetStatus,DELIVERY_FAILED', 'nullable', Rule::enum(DeliveryFailureReason::class)],
+            'note' => ['required_if:targetStatus,DELIVERY_FAILED', 'nullable', 'string', 'min:3', 'max:500'],
+            'pickupCode' => ['nullable', 'string', 'max:10'],
+            'verifiedPhone' => ['nullable', 'string', 'max:20'],
+            'collectedBy' => ['nullable', 'string', 'max:100'],
         ];
     }
 }

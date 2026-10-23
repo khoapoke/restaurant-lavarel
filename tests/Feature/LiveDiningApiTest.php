@@ -451,7 +451,7 @@ class LiveDiningApiTest extends TestCase
             ->assertJsonPath('data.invoice.status', 'OPEN')
             ->assertJsonPath('data.invoice.totalAmount', fn ($total) => (float) $total === (float) $dish->gia_tien * 2)
             ->assertJsonPath('data.invoice.lines.0.quantity', 2)
-            ->assertJsonPath('data.invoice.qr.transferContent', "HD{$invoice['invoiceId']} THANH TOAN");
+            ->assertJsonPath('data.invoice.qr.transferContent', "HD{$invoice['invoiceId']}V1 THANH TOAN");
 
         $this->submitOrder($table, $visitToken, [['dishId' => $dish->ma_mon_an, 'quantity' => 1]], 'after-bill-round-1')->assertStatus(409);
 

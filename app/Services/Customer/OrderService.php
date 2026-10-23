@@ -2,6 +2,7 @@
 
 namespace App\Services\Customer;
 
+use App\Enums\CancellationMoneyDecision;
 use App\Enums\FulfillmentStatus;
 use App\Enums\FulfillmentType;
 use App\Enums\KitchenItemStatus;
@@ -9,16 +10,30 @@ use App\Enums\OrderChannel;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Exceptions\DomainConflictException;
+use App\Models\Account;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
+use App\Services\Admin\OrderService as AdminOrderService;
+use App\Services\Payments\PaymentLedgerService;
+use App\Services\Shared\AuditLogger;
+use App\Services\Shared\OpeningHours;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class OrderService
 {
+    public function __construct(
+        private readonly OpeningHours $hours,
+        private readonly AdminOrderService $orders,
+        private readonly PaymentLedgerService $ledger,
+        private readonly AuditLogger $audit,
+    ) {}
+
     /**
      * Checkout active cart to create order (ORD-01, ORD-02, ORD-03).
      *
@@ -44,7 +59,7 @@ class OrderService
             $orderPivotData = [];
 
             foreach ($cart->dishes as $dish) {
-                if (! $dish->isAvailable || ! $dish->isVisible || $dish->isDeleted) {
+                if (! $dish->isOrderable()) {
                     throw new HttpException(400, "Dish '{$dish->dishName}' has just sold out");
                 }
 
@@ -59,6 +74,7 @@ class OrderService
                 $orderPivotData[$dish->ma_mon_an] = [
                     'ten_mon_snapshot' => $dish->ten_mon_an,
                     'so_luong' => $qty,
+                    'so_luong_tinh_tien' => $qty,
                     'don_gia' => $unitPrice,
                     'trang_thai_bep' => KitchenItemStatus::SENT->value,
                 ];
@@ -68,7 +84,17 @@ class OrderService
                 throw new HttpException(400, 'Cannot checkout an empty cart');
             }
 
+            // Giá đã đổi so với số khách đang xem: không tạo đơn, giỏ giữ nguyên để khách xác nhận lại.
+            if (isset($data['expectedTotal']) && abs((float) $data['expectedTotal'] - $totalAmount) > 0.009) {
+                throw new DomainConflictException('Prices changed since you last viewed the cart. Review the new total and confirm again.', [
+                    'reason' => 'PRICE_CHANGED',
+                    'expectedTotal' => round((float) $data['expectedTotal'], 2),
+                    'currentTotal' => round($totalAmount, 2),
+                ]);
+            }
+
             $fulfillmentType = FulfillmentType::from($data['fulfillmentType']);
+            $scheduledAt = $this->validateSchedule($data['scheduledAt'] ?? null);
             $recipientName = trim($data['recipientName'] ?? '');
             $recipientPhone = trim($data['recipientPhone'] ?? '');
             $orderNote = trim($data['orderNote'] ?? '');
@@ -87,7 +113,7 @@ class OrderService
                 'dia_chi_giao_hang' => $shippingAddress,
                 'ten_nguoi_nhan' => $recipientName,
                 'so_dien_thoai_nhan' => $recipientPhone,
-                'thoi_gian_nhan_du_kien' => $data['scheduledAt'] ?? null,
+                'thoi_gian_nhan_du_kien' => $scheduledAt,
                 'ma_tai_khoan' => $accountId,
                 'kenh' => OrderChannel::ONLINE,
                 'loai_phuc_vu' => $fulfillmentType,
@@ -124,6 +150,50 @@ class OrderService
 
             return $order->load(['dishes', 'payment']);
         });
+    }
+
+    /**
+     * Giờ hẹn: trong giờ nhận gọi món của ngày đó, tối đa N ngày tới. Không hẹn (ASAP) chỉ
+     * khi bếp đang nhận đơn.
+     */
+    private function validateSchedule(mixed $scheduledAt): ?Carbon
+    {
+        if ($scheduledAt === null || $scheduledAt === '') {
+            $this->hours->assertAcceptsOrders();
+
+            return null;
+        }
+
+        $moment = Carbon::parse($scheduledAt)->setTimezone(config('app.timezone'));
+        if ($moment->lessThanOrEqualTo(now())) {
+            throw new HttpException(422, 'Scheduled time must be in the future.');
+        }
+        if ($moment->greaterThan(now()->addDays((int) config('restaurant.fulfillment.max_schedule_days', 7)))) {
+            throw new HttpException(422, sprintf('Orders can be scheduled at most %d days ahead.', (int) config('restaurant.fulfillment.max_schedule_days', 7)));
+        }
+        if (! $this->hours->acceptsOrdersAt($moment)) {
+            throw new HttpException(422, sprintf('Choose a time between %s and %s.', config('restaurant.hours.opens_at'), config('restaurant.hours.last_order_at')));
+        }
+
+        return $moment;
+    }
+
+    /**
+     * Khách sửa người nhận/SĐT/địa chỉ trước khi đơn được giao tài xế hoặc bàn giao.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function updateRecipient(Account $account, int $orderId, array $data): Order
+    {
+        $order = Order::query()
+            ->where('ma_don_hang', $orderId)
+            ->where('ma_tai_khoan', $account->ma_tai_khoan)
+            ->first();
+        if (! $order) {
+            throw new HttpException(404, 'Order not found');
+        }
+
+        return $this->orders->changeRecipient($order, $data, $account, 'Khách tự cập nhật');
     }
 
     /**
@@ -201,21 +271,30 @@ class OrderService
             }
 
             $reason = trim((string) $cancelReason);
-            $order->trang_thai = OrderStatus::CANCELLED;
-            if ($reason !== '') {
-                $order->ghi_chu = trim(trim((string) $order->ghi_chu)."\n[KHÁCH HỦY] ".$reason);
-            }
-            $order->save();
+            $paid = $this->ledger->paidAmount($order);
+            $order->forceFill([
+                'trang_thai' => OrderStatus::CANCELLED,
+                'ly_do_huy' => $reason !== '' ? $reason : 'Khách tự hủy',
+                'quyet_dinh_tien_huy' => $paid > 0 ? CancellationMoneyDecision::REFUND_DUE->value : null,
+                'ma_nguoi_huy' => $accountId,
+                'huy_luc' => now(),
+            ])->save();
 
             OrderItem::where('ma_don_hang', $order->ma_don_hang)
                 ->where('trang_thai_bep', '!=', KitchenItemStatus::SERVED->value)
-                ->update(['trang_thai_bep' => KitchenItemStatus::CANCELLED->value]);
+                ->update(['trang_thai_bep' => KitchenItemStatus::CANCELLED->value, 'so_luong_tinh_tien' => 0, 'huy_luc' => now()]);
 
             $payment = Payment::query()->where('ma_don_hang', $order->ma_don_hang)->lockForUpdate()->first();
             if ($payment && $reason !== '' && empty($payment->ly_do_hoan_tien)) {
                 $payment->ly_do_hoan_tien = $reason;
                 $payment->save();
             }
+            $this->ledger->syncOrderPayment($order->fresh());
+            $this->audit->record(Account::find($accountId), 'ORDER_CANCELLED', 'ORDER', (int) $order->ma_don_hang, $order->ly_do_huy, ['status' => OrderStatus::PENDING_CONFIRMATION->name], [
+                'status' => OrderStatus::CANCELLED->name,
+                'reasonType' => 'CUSTOMER_REQUEST',
+                'moneyDecision' => $order->quyet_dinh_tien_huy,
+            ]);
 
             return $order->load('payment');
         });
