@@ -11,3 +11,4 @@ Artisan::command('inspire', function () {
 // ADR-025: hết hạn lượt chờ xác nhận, tự đánh dấu không đến, làm mới trạng thái giữ bàn.
 // API vẫn tự kiểm tra hạn nên nếu lệnh chạy trễ, bàn quá hạn giữ chỗ cũng không bị chặn.
 Schedule::command('dining:reservations:sweep')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('dining:communications:dispatch')->everyMinute()->withoutOverlapping(5);

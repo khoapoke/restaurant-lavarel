@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Order;
+use App\Models\Payment;
+use App\Models\Reservation;
+use App\Observers\GuestCommunicationObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -22,7 +26,26 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Reservation::observe(GuestCommunicationObserver::class);
+        Order::observe(GuestCommunicationObserver::class);
+        Payment::observe(GuestCommunicationObserver::class);
         $this->configureLiveDiningRateLimits();
+        $this->configureCommunicationRateLimits();
+    }
+
+    /**
+     * Mỗi nhóm thao tác một bucket riêng theo tài khoản: khách (chat), đánh giá bữa ăn, nhân viên hỗ trợ và
+     * gửi lại email của quản trị không tiêu hạn mức của nhau.
+     */
+    private function configureCommunicationRateLimits(): void
+    {
+        $limit = fn (Request $request, string $bucket, string $setting): Limit => Limit::perMinute((int) config('communications.rate_limits.'.$setting))
+            ->by($bucket.'|'.$request->user()?->getAuthIdentifier());
+
+        RateLimiter::for('support-customer', fn (Request $request) => $limit($request, 'support-customer', 'customer_per_minute'));
+        RateLimiter::for('notice-feedback', fn (Request $request) => $limit($request, 'notice-feedback', 'customer_per_minute'));
+        RateLimiter::for('support-staff', fn (Request $request) => $limit($request, 'support-staff', 'staff_per_minute'));
+        RateLimiter::for('email-retry', fn (Request $request) => $limit($request, 'email-retry', 'email_retry_per_minute'));
     }
 
     /**

@@ -422,3 +422,75 @@ Chính sách đầy đủ và các con số cấu hình: `docs/operations/except
 - Hủy: không khi đang giao; `reasonType` hợp lệ; `PICKUP_NO_SHOW` chỉ khi quá hạn giữ món; `RETAINED` chỉ khi lỗi do khách; `ADDRESS_UNSERVICEABLE` luôn phải hoàn.
 - Sửa người nhận: trước khi giao tài xế/bàn giao, đơn chưa kết thúc; admin cần lý do.
 - Checkout: giờ hẹn ở tương lai, ≤ 7 ngày, trong giờ nhận đơn; không hẹn thì bếp phải đang nhận đơn; `expectedTotal` lệch → 409 `PRICE_CHANGED`.
+
+## 8. Email, thông báo & chat hỗ trợ (ADR-029, `Services/Shared/*`, 2026-10-23)
+
+### 8.1. Inbox + outbox (`GuestCommunicationService`)
+- Observer của `Reservation`/`Order`/`Payment` ghi thông báo trong ứng dụng và dòng email cùng transaction với thay đổi nghiệp vụ
+  (rollback cùng nhau). Khóa sự kiện `event_key` duy nhất; SMTP/Gemini không bao giờ chạy trong transaction nghiệp vụ.
+- Lượt đặt PENDING ghi rõ "chưa phải xác nhận giữ bàn"; chỉ CONFIRMED nói giữ chỗ tới giờ nào. Không đưa ghi chú nội bộ vào thông báo.
+- Trước khi gửi, kiểm tra lại: tài khoản còn hoạt động, email chưa đổi, thông báo chưa bị thay thế (trạng thái/giờ của lượt đặt
+  hoặc đơn vẫn như lúc ghi), nhắc lịch chưa hủy/đổi lịch/đã nhận bàn và giờ hẹn chưa qua, chat vẫn còn tin chưa đọc.
+
+### 8.2. Hạn gửi email tự động (`emailExpiresAt`, cấu hình `communications.email_ttl_minutes`)
+
+| Loại | Hạn mặc định (tính từ lúc tạo thông báo) |
+|---|---|
+| Tiếp nhận / xác nhận / cập nhật đặt bàn hoặc đơn | 2 giờ |
+| Hủy / từ chối / hết hạn / không đến (đặt bàn), hủy đơn, giao hàng chưa thành công | 24 giờ |
+| Chat chưa đọc | 24 giờ |
+| Mời đánh giá | 48 giờ |
+| Biên nhận thanh toán | 7 ngày |
+| Nhắc đặt bàn | tới đúng giờ hẹn |
+| Loại khác | 24 giờ |
+
+- `now ≥ expires_at` → `SKIPPED` + `EMAIL_EXPIRED` (dispatcher đánh dấu trước khi đưa vào hàng đợi; job kiểm lại ngay trước khi gửi).
+  Thông báo trong ứng dụng, chứng từ và lịch sử không bị xóa. Retry tự động và gửi lại thủ công không gia hạn; gửi lại thư đã quá
+  hạn → 409. Dòng outbox tạo trước khi có cột hạn được bổ sung hạn theo lúc tạo thông báo.
+
+### 8.3. Kết quả SMTP (`DeliverGuestNotice::classify`)
+- Phân loại theo mã phản hồi SMTP Symfony Mailer gắn vào exception (`UnexpectedResponseException`/`TransportException::getCode()`),
+  không dò số trong chuỗi lỗi.
+- 4xx (máy chủ trả lời rõ là chưa nhận, thử lại sau; gồm 4xx khi xác thực) → `RETRY` sau 2^n phút, tối đa 3 lần rồi `FAILED`.
+- 5xx → `FAILED` `SMTP_FAILURE_REVIEW_REQUIRED`. Timeout/mất kết nối (mã 0, có thể đã nhận DATA) → `FAILED`
+  `SEND_OUTCOME_UNKNOWN_REVIEW_REQUIRED`. Lỗi không phải SMTP → `SEND_ERROR_REVIEW_REQUIRED`. Không tự gửi lại các trường hợp này.
+- Không lưu/ghi log message của exception (có thể chứa tên đăng nhập SMTP, địa chỉ, nội dung máy chủ); log chỉ có mã lỗi, mã SMTP, số lần thử, tên lớp exception.
+
+### 8.4. Mời đánh giá sau bữa ăn
+- Sau `feedback_delay_minutes` (120) kể từ thông báo hoàn tất, trong vòng 24 giờ; chỉ khi bữa đó thực sự `COMPLETED` của chính tài khoản.
+- Định danh bữa: bữa tại bàn theo **phiên POS** (`session:{ma_phien}` — lượt đặt và đơn POS cùng phiên là một bữa; lượt đặt chưa có phiên
+  dùng `reservation:{id}`); đơn online theo đơn (`order:{id}`).
+- Tối đa một lời mời mỗi bữa (`event_key = feedback:{meal}` duy nhất) và một lời mời/ngày/tài khoản (`limit_key = feedback-day:{account}:{ngày}`
+  duy nhất). Vi phạm ràng buộc → không ghi gì; bữa bị giới hạn ngày có thể được mời ở lượt quét sau nếu còn trong khung.
+
+### 8.5. Biên nhận thanh toán
+- Ghi khi khoản phải thu vừa được thu đủ: thanh toán chuyển sang `PAID`, hoặc `PARTIALLY_REFUNDED` từ chưa thu/thu một phần khi đơn
+  có bồi hoàn (`so_tien_giam_tru > 0`) và đã thu ≥ khoản phải thu.
+- Snapshot (`receiptVersion` 2) tại thời điểm thu: dòng món tính tiền, `itemsSubtotal`, `deliveryFee` (`phi_giao_hang`), `compensation`
+  (`so_tien_giam_tru`), `otherAdjustment` (phần chênh còn lại để các dòng luôn khớp), `total` (= `tong_tien − so_tien_giam_tru`),
+  `amountPaid`, `amountRefunded`. Không sửa ngược snapshot.
+- Hoàn tiền/bồi hoàn/hủy đơn sau lúc thu: biên nhận vẫn gửi (là chứng từ lịch sử), kèm mục "Cập nhật tính đến …" đọc từ sổ tiền và câu
+  "Biên nhận phía trên giữ nguyên số liệu tại thời điểm thu tiền". Bồi hoàn là một phần của số đã hoàn, không cộng hai lần. Không tạo chứng từ mới.
+
+### 8.6. Chat hỗ trợ (`SupportChatService`)
+- Một hội thoại hoạt động/khách (`active_account_id` duy nhất), một người phụ trách. Trạng thái `AI → WAITING → HUMAN → CLOSED`;
+  `release` đưa `HUMAN → WAITING`; về hàng chờ không bao giờ bật lại AI.
+- Chỉ người phụ trách trả lời. Nhả/chuyển/tiếp quản bắt buộc lý do ≥ 5 ký tự và ghi `NHAT_KY_THAO_TAC`; người nhận mới phải là STAFF/ADMIN
+  đang hoạt động (khóa dòng tài khoản khi kiểm). Khóa nhân viên → hội thoại người đó phụ trách về `WAITING`. Không tự nhả vì mất mạng hay "hết ca".
+- Mọi chuyển trạng thái chạy dưới `lockForUpdate`, thử lại tối đa 3 lần khi CSDL báo tranh chấp; hết lượt → 409.
+- Chống gửi trùng: `(conversation_id, sender, client_key)` duy nhất + `request_hash`. Con trỏ đã đọc theo ID tin (đơn điệu).
+
+### 8.7. Trợ lý AI (`GeminiAssistant`, `GenerateSupportReply`)
+- Xử lý cục bộ trước, không gọi Gemini, không tính quota: yêu cầu nhạy cảm (hủy, hoàn tiền, khiếu nại, dị ứng, gặp nhân viên…) →
+  chuyển nhân viên; tra cứu đơn/lượt đặt của **chính** khách. Hết quota Gemini vẫn tra cứu được.
+- Chỉ giữ chỗ quota (tài khoản 40/ngày, toàn app 500/ngày — số lượt gọi) ngay trước khi gửi request, sau khi kiểm lại hội thoại vẫn
+  `AI`; kiểm tra và trừ cả hai hạn mức trong cùng khóa `ai-daily-budget`.
+- Câu hỏi chờ quá `stale_after_minutes` (10) → chuyển nhân viên, không gọi Gemini. Request đã gửi không hủy được; câu trả lời đến sau khi
+  nhân viên tiếp nhận bị bỏ dưới khóa hội thoại.
+- JSON bị cắt (`finishReason = MAX_TOKENS`), bị chặn, sai schema, timeout, 429/5xx → câu trả lời dự phòng + chuyển nhân viên; log mã lỗi
+  (`AI_TRUNCATED`, `AI_PROVIDER_QUOTA`…), HTTP status — không log key, request, nội dung chat hay phản hồi nhà cung cấp.
+- Thẻ món chỉ gồm món đang bán công khai, lọc theo dị ứng hồ sơ; giá lấy lại từ DB khi hiển thị.
+
+### 8.8. Giới hạn thao tác
+Khách: chat 12/phút, đánh giá 12/phút (bucket riêng). Nhân viên: 60/phút. Gửi lại email của quản trị: 10/phút. Cấu hình
+`SUPPORT_CUSTOMER_PER_MINUTE`, `SUPPORT_STAFF_PER_MINUTE`, `EMAIL_RETRY_PER_MINUTE`.

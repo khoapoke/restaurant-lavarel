@@ -357,3 +357,33 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   dòng đảo phân bổ của đơn đó), phần tiền chưa phân bổ một dòng riêng. "Đã hoàn của đơn" = tổng dòng của đơn.
   `PaymentLedgerService::refund()` trả về `Collection<Refund>`.
 - **Dữ liệu cũ:** migration mới `2026_10_23_090000` (không sửa migration đã chạy). `down()` không đảo dữ liệu.
+
+## ADR-029: Email + inbox + Mộc đồng hành, không mở rộng CRUD
+- **Ngày quyết định:** 2026-10-23.
+- Thông báo ghi vào inbox và outbox cùng transaction với sự kiện đặt bàn/đơn/thanh toán. Không SMTP trong transaction nghiệp vụ. Revision + khóa sự kiện duy nhất chống ghi lặp; worker xử lý sau commit trên queue database `communications`. Scheduler quét outbox mỗi phút để chịu được lỗi dispatch.
+- Tiếp nhận đặt bàn nói rõ đang chờ duyệt; chỉ CONFIRMED mới giữ chỗ. Email nhắc lịch trước 60 phút được kiểm tra lại khi gửi; thông báo cũ đã bị thay thế không gửi. Biên nhận là chứng từ nhà hàng, không giả làm hóa đơn thuế. Mời đánh giá sau 2 giờ, tối đa 1/ngày/tài khoản, không chiến dịch marketing.
+- Trạng thái mail: PENDING/RETRY/SENDING/ACCEPTED/SKIPPED/FAILED; test transport là SIMULATED, không đánh dấu gửi thật. 4xx SMTP tạm thời thử tối đa 3 lần; kết quả không chắc chắn cần quản trị kiểm tra, xác nhận rủi ro và ghi nhật ký trước khi gửi lại. SMTP không đảm bảo exactly-once sau crash.
+- Chat xác thực CUSTOMER, truy vấn giới hạn chủ tài khoản. Một hội thoại hoạt động/tài khoản, một nhân viên phụ trách. AI → WAITING → HUMAN → CLOSED; khách được đóng/mở cuộc mới. Idempotency UUID + hash nội dung trong DB và localStorage theo tài khoản bảo vệ retry/reload. Polling giữ đúng ADR-021, không cài Reverb.
+- Gemini chỉ backend, JSON schema + giới hạn context/output, timeout, quota lượt gọi theo ngày. Chỉ thực đơn/chính sách công khai gửi sang AI; trạng thái đơn/lượt của chính khách tra cứu nội bộ và loại khỏi lịch sử gửi model. Giá/thẻ món kiểm lại từ DB; không quyền viết giao dịch. Lỗi/quota/cần xử lý nhạy cảm → hàng chờ nhân viên. Trả lời AI đến muộn sau takeover bị bỏ dưới khóa hội thoại.
+- Demo chuyển mọi email về `COMMUNICATIONS_TEST_RECIPIENT`, production không dùng override. Đã áp riêng migration communications sau backup SQLite; không chạy migration sửa tiền đang chờ. SMS/Zalo/Web Push vẫn để sau.
+
+### ADR-029 bổ sung (2026-10-24): sửa theo review communications
+- **Chuyển người hỗ trợ:** người phụ trách được `release` về `WAITING`; ADMIN `reassign` (STAFF/ADMIN đang hoạt động) hoặc `takeover`.
+  Bắt buộc lý do + nhật ký. Khóa nhân viên → hội thoại họ phụ trách về hàng chờ, giữ lịch sử, báo khách. Không tự nhả vì mất mạng/"hết ca".
+  Về hàng chờ không bật lại AI. Chuyển trạng thái thử lại khi CSDL báo tranh chấp, hết lượt → 409 (đã kiểm hai tiến trình trên file SQLite).
+- **Mời đánh giá:** một lời mời mỗi bữa (bữa tại bàn = phiên POS, online = đơn) và một/ngày/tài khoản, bằng hai khóa duy nhất trong
+  `customer_notices` (`event_key`, `limit_key`). Bị giới hạn ngày không ghi gì.
+- **Hạn gửi email:** 2 giờ cập nhật, 24 giờ hủy/từ chối/không đến/chat chưa đọc, 48 giờ mời đánh giá, 7 ngày biên nhận, nhắc lịch tới giờ hẹn;
+  `SKIPPED/EMAIL_EXPIRED`, không gia hạn khi retry, không xóa inbox/chứng từ.
+- **SMTP:** chỉ mã phản hồi 4xx Symfony gắn vào exception mới tự gửi lại; timeout/không rõ/5xx chờ quản trị. Không dò số trong chuỗi lỗi.
+- **Biên nhận:** snapshot v2 giải thích tiền món + phí giao − giảm trừ/bồi hoàn = tổng phải thu; cùng hàm dựng dòng cho email và API. Hoàn tiền sau
+  lúc thu hiển thị tách riêng có thời điểm, không sửa snapshot, không tạo chứng từ. Biên nhận cũng ghi khi thu đủ sau bồi hoàn (PARTIALLY_REFUNDED).
+- **Quota AI:** tra cứu nội bộ/chuyển nhân viên cục bộ không tính quota; chỉ giữ chỗ ngay trước request Gemini. Câu hỏi chờ > 10 phút chuyển nhân viên.
+  JSON bị cắt (`MAX_TOKENS`) → dự phòng. Log mã lỗi an toàn.
+- **Hàng đợi:** `dispatched_at`/`ai_dispatched_at` + lease 10 phút; hàng đợi tồn quá 2 phút thì scheduler không đẩy thêm. Giới hạn thao tác tách bucket:
+  khách 12, nhân viên 60, gửi lại email 10 mỗi phút.
+- **Chuyển tiếp schema:** `GuestCommunicationService::schemaReady()` cho code mới chạy khi DB chưa áp migration `2026_10_23_233204`: không ghi cột mới,
+  dispatcher tạm dừng với cảnh báo `communications.migration_pending`, nghiệp vụ đặt bàn/đơn không bị rollback. Có thể bỏ sau khi mọi môi trường đã migrate.
+- **Frontend:** polling có `resetKey` (đổi trang/bộ lọc/hội thoại tải ngay, bỏ phản hồi cũ); tin chờ gửi lưu theo từng `clientKey`, tự bỏ khi tin đã có
+  trên server, dọn khi đăng xuất/401/khóa/đổi tài khoản; đồng bộ phiên giữa các tab; ConfirmDialog thay `window.confirm`.
+- **Chưa làm:** observer/revision và `Schema::hasTable` mỗi sự kiện giữ nguyên vì chưa chứng minh được lỗi thực tế.

@@ -4,25 +4,24 @@ namespace App\Services\Admin;
 
 use App\Enums\AccountStatus;
 use App\Models\Account;
+use App\Services\Shared\SupportChatService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class AccountService
 {
     /**
      * Get paginated accounts list with search and filters (USR-07, USR-08).
-     *
-     * @param array $filters
-     * @return LengthAwarePaginator
      */
     public function getAccounts(array $filters = []): LengthAwarePaginator
     {
         $query = Account::with(['role', 'userProfile']);
 
         // 1. Tìm kiếm theo keyword (username, email, fullName, phoneNumber)
-        if (!empty($filters['keyword'])) {
+        if (! empty($filters['keyword'])) {
             $keyword = trim($filters['keyword']);
             $query->where(function (Builder $q) use ($keyword) {
                 $q->where('ten_dang_nhap', 'like', "%{$keyword}%")
@@ -35,7 +34,7 @@ class AccountService
         }
 
         // 2. Lọc theo trạng thái (status: ACTIVE / LOCKED hoặc Hoạt động / Bị khóa)
-        if (!empty($filters['status'])) {
+        if (! empty($filters['status'])) {
             $statusInput = strtoupper(trim($filters['status']));
             if ($statusInput === 'ACTIVE' || $statusInput === AccountStatus::ACTIVE->value) {
                 $query->where('trang_thai', AccountStatus::ACTIVE->value);
@@ -45,7 +44,7 @@ class AccountService
         }
 
         // 3. Lọc theo vai trò (roleId)
-        if (!empty($filters['roleId'])) {
+        if (! empty($filters['roleId'])) {
             $query->where('ma_vai_tro', (int) $filters['roleId']);
         }
 
@@ -59,9 +58,6 @@ class AccountService
     /**
      * Lock an account and purge all active tokens (USR-09, Rule AUTH-LOCK).
      *
-     * @param Account $currentAdmin
-     * @param int $accountId
-     * @return Account
      * @throws HttpException
      * @throws ModelNotFoundException
      */
@@ -73,16 +69,23 @@ class AccountService
         }
 
         $targetAccount = Account::with(['role', 'userProfile'])->find($accountId);
-        if (!$targetAccount) {
+        if (! $targetAccount) {
             throw new ModelNotFoundException('Account not found');
         }
 
-        // Cập nhật trạng thái bị khóa
-        $targetAccount->trang_thai = AccountStatus::LOCKED;
-        $targetAccount->save();
+        DB::transaction(function () use ($currentAdmin, $targetAccount): void {
+            // Cập nhật trạng thái bị khóa
+            $targetAccount->trang_thai = AccountStatus::LOCKED;
+            $targetAccount->save();
 
-        // Xóa toàn bộ token trong personal_access_tokens để đăng xuất cưỡng bức ngay lập tức
-        $targetAccount->tokens()->delete();
+            // Xóa toàn bộ token trong personal_access_tokens để đăng xuất cưỡng bức ngay lập tức
+            $targetAccount->tokens()->delete();
+
+            // Hội thoại hỗ trợ nhân viên này đang phụ trách trở về hàng chờ (ADR-029 bổ sung)
+            if ($targetAccount->roleCode() !== 'CUSTOMER') {
+                app(SupportChatService::class)->releaseAssignmentsOf($targetAccount, $currentAdmin);
+            }
+        });
 
         return $targetAccount;
     }
@@ -90,14 +93,12 @@ class AccountService
     /**
      * Unlock an account (USR-10).
      *
-     * @param int $accountId
-     * @return Account
      * @throws ModelNotFoundException
      */
     public function unlockAccount(int $accountId): Account
     {
         $targetAccount = Account::with(['role', 'userProfile'])->find($accountId);
-        if (!$targetAccount) {
+        if (! $targetAccount) {
             throw new ModelNotFoundException('Account not found');
         }
 

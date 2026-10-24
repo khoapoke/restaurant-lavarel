@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Api\Admin\ReservationController as AdminReservationController;
 use App\Http\Controllers\Api\Admin\TableController as AdminTableController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CommunicationController;
 use App\Http\Controllers\Api\Customer\CartController;
 use App\Http\Controllers\Api\Customer\MenuController;
 use App\Http\Controllers\Api\Customer\OrderController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\Api\Staff\LiveFloorController;
 use App\Http\Controllers\Api\Staff\PosOrderController;
 use App\Http\Controllers\Api\Staff\PosSessionController;
 use App\Http\Controllers\Api\Staff\ReservationDeskController;
+use App\Http\Controllers\Api\Staff\SupportController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -53,6 +55,15 @@ Route::prefix('v1')->group(function () {
 
         // Protected customer endpoints (Profile, Cart, Orders, Reservations)
         Route::middleware(['auth:sanctum', 'account.active', 'role:CUSTOMER'])->group(function () {
+            Route::get('/notifications', [CommunicationController::class, 'notices']);
+            Route::post('/notifications/read-all', [CommunicationController::class, 'readAll']);
+            Route::post('/notifications/{noticeId}/read', [CommunicationController::class, 'read'])->whereNumber('noticeId');
+            Route::post('/notifications/{noticeId}/feedback', [CommunicationController::class, 'feedback'])->whereNumber('noticeId')->middleware('throttle:notice-feedback');
+            Route::get('/support/current', [CommunicationController::class, 'current']);
+            Route::post('/support', [CommunicationController::class, 'open'])->middleware('throttle:support-customer');
+            Route::get('/support/{conversationId}', [CommunicationController::class, 'show'])->whereNumber('conversationId');
+            Route::post('/support/{conversationId}/messages', [CommunicationController::class, 'message'])->whereNumber('conversationId')->middleware('throttle:support-customer');
+            Route::post('/support/{conversationId}/actions', [CommunicationController::class, 'action'])->whereNumber('conversationId')->middleware('throttle:support-customer');
             // A.1. Quản lý Hồ sơ, Địa chỉ & Dị ứng
             Route::get('/profile', [ProfileController::class, 'show']);
             Route::put('/profile', [ProfileController::class, 'update']);
@@ -84,6 +95,7 @@ Route::prefix('v1')->group(function () {
             // A.5. Đặt bàn trực tuyến (BKG-01 -> BKG-04)
             Route::get('/tables/available', [CustomerReservationController::class, 'availableTables']);
             Route::get('/reservations', [CustomerReservationController::class, 'index']);
+            Route::get('/reservations/{reservationId}', [CustomerReservationController::class, 'show'])->whereNumber('reservationId');
             Route::post('/reservations', [CustomerReservationController::class, 'store']);
             Route::put('/reservations/{reservationId}', [CustomerReservationController::class, 'update'])->whereNumber('reservationId');
             Route::post('/reservations/{reservationId}/cancel', [CustomerReservationController::class, 'cancel'])->whereNumber('reservationId');
@@ -140,6 +152,10 @@ Route::prefix('v1')->group(function () {
     });
 
     Route::prefix('staff')->middleware(['auth:sanctum', 'account.active', 'role:STAFF,ADMIN'])->group(function () {
+        Route::get('/support', [SupportController::class, 'index']);
+        Route::get('/support/{conversation}', [SupportController::class, 'show'])->whereNumber('conversation');
+        Route::post('/support/{conversation}/messages', [SupportController::class, 'message'])->whereNumber('conversation')->middleware('throttle:support-staff');
+        Route::post('/support/{conversation}/actions', [SupportController::class, 'action'])->whereNumber('conversation')->middleware('throttle:support-staff');
         Route::get('/kitchen/items', [KitchenController::class, 'index']);
         Route::patch('/kitchen/items/{item}/status', [KitchenController::class, 'updateStatus']);
         Route::post('/kitchen/items/{item}/reject', [ItemCorrectionController::class, 'reject']);
@@ -165,6 +181,9 @@ Route::prefix('v1')->group(function () {
 
     // PHẦN C: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
     Route::prefix('admin')->middleware(['auth:sanctum', 'account.active', 'role:ADMIN'])->group(function () {
+        Route::get('/support/assignees', [SupportController::class, 'assignees']);
+        Route::get('/communications/deliveries', [SupportController::class, 'deliveries']);
+        Route::post('/communications/deliveries/{delivery}/retry', [SupportController::class, 'retryDelivery'])->whereNumber('delivery')->middleware('throttle:email-retry');
         // B.1. Quản lý Người dùng
         Route::get('/accounts', [AdminAccountController::class, 'index']);
         Route::patch('/accounts/{accountId}/lock', [AdminAccountController::class, 'lock'])->whereNumber('accountId');

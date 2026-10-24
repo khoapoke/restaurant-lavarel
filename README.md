@@ -1,5 +1,35 @@
 # 🍽️ Hệ Thống Quản Lý Nhà Hàng & Đặt Món Trực Tuyến (Pure RESTful API)
 
+## Email, thông báo và Mộc đồng hành (2026-10-23)
+
+- Khách: chuông `/notifications`, khung **Hỏi Mộc** trên website (đăng nhập để dùng chat).
+- Nhân viên: `/staff/support`, tiếp nhận hội thoại trước khi trả lời. Một người phụ trách; AI dừng ngay khi chuyển người thật.
+- Quản trị: `/admin/communications`, kết quả SMTP, lỗi và gửi lại có xác nhận nguy cơ trùng + nhật ký; xem góp ý sau bữa ăn.
+- Chat dùng polling 2,5–3 giây khi mở; chỉ có thông báo trong web không thể đánh thức khách đã đóng web. Email là kênh bên ngoài; chưa tích hợp SMS, Zalo hay Web Push.
+
+Chạy thêm hai terminal tại backend (ngoài API và frontend):
+
+```powershell
+php artisan queue:work database --queue=communications --sleep=1 --timeout=45 --tries=1
+php artisan schedule:work
+```
+
+`schedule:work` chạy cả các tác vụ vận hành đã có; production dùng cron `schedule:run` mỗi phút và quản lý worker bằng process supervisor. Khởi động lại worker sau khi sửa code/config.
+
+Email thật cần `MAIL_MAILER=smtp`, SMTP hợp lệ và `COMMUNICATIONS_EMAIL_ENABLED=true`. Gmail dùng App Password, không dùng mật khẩu đăng nhập. Không commit `.env` hay gửi khóa Gemini/mật khẩu lên chat.
+
+Ở máy demo, đặt `COMMUNICATIONS_TEST_RECIPIENT` bằng Gmail kiểm thử của bạn: thư vẫn gửi thật nhưng **mọi thư chuyển về hộp thư kiểm thử**, không gửi tới khách mẫu. Khi triển khai thật, bỏ biến này; production luôn dùng người nhận thực. Biến này chỉ bảo vệ gửi mail, không ẩn nội dung nghiệp vụ khỏi người đang đăng nhập đúng tài khoản.
+
+`dining:communications:dispatch` mỗi phút tạo nhắc lịch trước 60 phút, lời mời đánh giá sau 2 giờ (tối đa một lời mời mỗi bữa và một/ngày/tài khoản; bữa tại bàn tính theo phiên POS) và thông báo chat chưa đọc có giới hạn. Trước khi gửi, kiểm tra lại hủy/đổi lịch/đã nhận bàn, tài khoản khóa, email đã đổi và thông báo bị thay thế. Email có **hạn gửi tự động** (2 giờ cập nhật, 24 giờ hủy/không đến/chat, 48 giờ mời đánh giá, 7 ngày biên nhận, nhắc lịch tới giờ hẹn; cấu hình `EMAIL_TTL_*`): quá hạn → `EMAIL_EXPIRED`, retry không gia hạn, thông báo trong app vẫn giữ. Chỉ phản hồi SMTP 4xx mới tự gửi lại; timeout/kết quả không xác định/5xx chờ quản trị kiểm tra. `ACCEPTED` chỉ là máy chủ đã nhận, không phải khách đã đọc. SMTP không có bảo đảm gửi đúng một lần tuyệt đối khi tiến trình chết sau khi máy chủ đã nhận thư. Mỗi việc chỉ được đưa lại vào hàng đợi sau 10 phút và scheduler ngừng đẩy thêm khi worker dừng.
+
+Gemini dùng `GEMINI_API_KEY` chỉ ở backend; mặc định model `gemini-3.5-flash-lite`, 40 lượt/tài khoản/ngày và 500 lượt/toàn app/ngày. Giới hạn này là **số lượt gọi Gemini** (tra cứu đơn/lượt đặt và chuyển nhân viên xử lý nội bộ không tính), không phải hạn mức tiền cứng của Google. Giới hạn thao tác: khách 12/phút, nhân viên 60/phút, gửi lại email 10/phút (`SUPPORT_*_PER_MINUTE`, `EMAIL_RETRY_PER_MINUTE`). Chỉ gửi thực đơn và chính sách công khai cùng nội dung chat được cảnh báo trước cho khách; tra cứu đơn/lượt đặt được xử lý nội bộ, không đưa kết quả riêng tư vào lịch sử gửi sang Gemini. AI chỉ tư vấn, không tự đặt/hủy/thu/hoàn tiền. Câu trả lời vẫn có thể sai; giá và món trong thẻ lấy lại từ DB, giao dịch cuối cùng luôn qua màn nghiệp vụ.
+
+Nhân viên phụ trách có thể **trả hội thoại về hàng chờ**; ADMIN **chuyển người phụ trách** hoặc **tiếp quản** — đều cần lý do và được ghi nhật ký. Khóa tài khoản nhân viên đưa các hội thoại họ đang phụ trách về hàng chờ. Biên nhận giải thích tiền món, phí giao, giảm trừ/bồi hoàn và tổng; hoàn tiền sau lúc thu hiện tách riêng, biên nhận lịch sử không bị sửa.
+
+Schema mới: `2026_10_23_165959_create_guest_communications_tables.php`, `2026_10_23_191711_add_read_cursors_to_support_conversations.php` và `2026_10_23_233204_harden_guest_communications_delivery_and_feedback.php` (hạn gửi, đánh dấu đã đưa vào hàng đợi, khóa giới hạn lời mời theo ngày; chỉ thêm cột nullable). Áp riêng migration thứ ba bằng `php artisan migrate --path=database/migrations/2026_10_23_233204_harden_guest_communications_delivery_and_feedback.php` sau khi sao lưu DB, rồi `php artisan queue:restart`; **không** dùng `php artisan migrate` trơn vì sẽ chạy luôn migration sổ tiền đang chờ. Khi chưa áp, code mới vẫn chạy nhưng tạm dừng nhắc lịch/mời đánh giá/đưa email vào hàng đợi (log `communications.migration_pending`). Con trỏ đọc dùng ID tin nhắn, không so thời gian theo giây để tránh bỏ sót tin đến cùng giây. Không dùng `migrate:fresh` trên DB có dữ liệu. Máy hiện tại đã chạy riêng hai migration này; migration chỉnh sổ tiền `2026_10_23_090000` vẫn để nguyên trạng thái chờ, không tự áp dụng trong milestone này.
+
+Kiểm tra: `php artisan test --compact --filter='GuestCommunicationTest|SupportChatTest'`. Kịch bản trình duyệt nằm ở frontend `scripts/communications-e2e.cjs`, chỉ chạy với DB dùng một lần, email tắt và worker riêng. Bộ kiểm thử PHP dùng SQLite in-memory, không gọi SMTP hay Gemini thật.
+
 > **Backend Service:** Laravel 11 pure RESTful API phục vụ các nền tảng Frontend (React, Next.js, Mobile App, v.v.).  
 > **Kiến trúc:** Service - Controller - FormRequest - API Resource với chuẩn hóa JSON Envelope và Global Exception Shielding.
 

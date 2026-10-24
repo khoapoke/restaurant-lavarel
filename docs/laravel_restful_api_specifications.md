@@ -1137,3 +1137,89 @@ Quyền: `role:STAFF,ADMIN` cho `/staff/*` trừ khi ghi ADMIN; `/admin/*` chỉ
 ### E.12. Lệnh
 
 - `php artisan dining:reservations:sweep` — hết hạn PENDING, tự no-show, làm mới giữ bàn; lên lịch 5 phút/lần, `withoutOverlapping`.
+
+
+---
+
+## PHẦN F: EMAIL, THÔNG BÁO & MỘC ĐỒNG HÀNH (ADR-029)
+
+Phong bì phản hồi giữ nguyên. Khách: `auth:sanctum`, `account.active`, `role:CUSTOMER`; nhân viên `role:STAFF,ADMIN`; `/admin/*` chỉ ADMIN.
+Giới hạn thao tác (mỗi nhóm một bucket theo tài khoản, cấu hình trong `config/communications.php` → `rate_limits`):
+chat khách `support-customer` 12/phút; đánh giá bữa ăn `notice-feedback` 12/phút; thao tác hỗ trợ của nhân viên
+`support-staff` 60/phút; gửi lại email của quản trị `email-retry` 10/phút. Vượt → 429.
+
+### F.1. Thông báo của khách
+
+| Method & path | Body / query | Ghi chú |
+|---|---|---|
+| `GET /customer/notifications?page=` | — | 20 mục/trang, mới nhất trước. `items[]{noticeId, kind, title, body, path, readAt, createdAt, receipt, feedback}`, `unreadCount`, `pagination{currentPage, totalPages}`. Chỉ thông báo của chính tài khoản |
+| `POST /customer/notifications/{id}/read` | — | 404 nếu không phải của mình |
+| `POST /customer/notifications/read-all` | — | Chỉ tài khoản hiện tại |
+| `POST /customer/notifications/{id}/feedback` | `rating` (1–5), `comment?` (≤ 1000) | Chỉ thông báo `FEEDBACK_REQUEST` của mình; gửi lại cập nhật đánh giá cũ |
+
+`kind`: `RESERVATION_UPDATED`, `RESERVATION_REMINDER`, `ORDER_UPDATED`, `PAYMENT_RECEIPT`, `FEEDBACK_REQUEST`, `SUPPORT_REPLY`.
+
+`receipt` (chỉ `PAYMENT_RECEIPT`): `{ paidAt, rows[], update, updateText }`.
+- `rows[]{label, amount, kind}` do backend tính bằng cùng hàm với email (`GuestNoticeMail::receiptRows`): các dòng món
+  (`kind=line`), `Tiền món`, `Phí giao hàng` (nếu > 0) (`subtotal`), `Giảm trừ / bồi hoàn` (số âm), `Điều chỉnh khác của đơn`
+  (nếu có) (`deduction`), `Tổng phải thu` (`total`), `Đã thu` (`paid`). Tiền món + phí giao − giảm trừ (+ điều chỉnh) = tổng phải thu.
+  Biên nhận tạo trước bản sửa (không có `receiptVersion`) chỉ có dòng món + `Tổng thanh toán`.
+- `update` = `null` hoặc `{asOf, refundedAfterReceipt, compensationAfterReceipt, orderCancelled}`: tình trạng **hiện tại** đọc từ
+  sổ tiền, tách khỏi biên nhận lịch sử. Bồi hoàn là một phần của số đã hoàn, không cộng hai lần. `updateText` là câu hiển thị sẵn.
+
+### F.2. Chat của khách
+
+| Method & path | Body / query | Ghi chú |
+|---|---|---|
+| `GET /customer/support/current` | — | `conversation` đang hoạt động hoặc `null`; đánh dấu đã đọc theo ID tin lớn nhất đã trả về |
+| `POST /customer/support` | — | 201; mở hội thoại (idempotent: đang có cuộc hoạt động thì trả cuộc đó) |
+| `GET /customer/support/{id}?before=` | `before` = messageId | 60 tin mới nhất hoặc 60 tin trước `before`; 404 nếu không phải của mình. Không đánh dấu đọc khi có `before` |
+| `POST /customer/support/{id}/messages` | `body` (1–1500, không toàn khoảng trắng), `clientKey` (UUID) | Gửi lại cùng `clientKey` + cùng nội dung → trả tin cũ; cùng khóa khác nội dung → 409; hội thoại đã đóng → 409 |
+| `POST /customer/support/{id}/actions` | `action` = `handoff` \| `close` | |
+
+`conversation`: `conversationId`, `status` (`AI`→`WAITING`→`HUMAN`→`CLOSED`), `assignedName`, `assignedTo` (chỉ phía nhân viên),
+`isMine`, `customerName` (chỉ phía nhân viên), `pendingAi`, `hasOlder`, `messages[]{messageId, sender, body, clientKey, createdAt, dishes[]{dishId, dishName, price, imageUrl, allergens}}`.
+Thẻ món đọc lại từ DB lúc trả về (món ẩn/hết bán biến mất, giá hiện tại). `sender`: `CUSTOMER|AI|STAFF|SYSTEM`.
+
+### F.3. Hộp thư hỗ trợ của nhân viên
+
+| Method & path | Body / query | Ghi chú |
+|---|---|---|
+| `GET /staff/support?status=&page=` | `status` ∈ `WAITING|HUMAN|AI|CLOSED`; mặc định WAITING + HUMAN | 30/trang; `items[]{conversationId, customerName, status, assignedName, isMine, unreadCount, lastMessageAt}`, `waitingCount`, `attentionCount` |
+| `GET /staff/support/{id}?before=` | — | Chỉ người phụ trách mới đánh dấu đã đọc |
+| `POST /staff/support/{id}/messages` | `body`, `clientKey` | Chỉ khi `HUMAN` và là người phụ trách, nếu không → 409 |
+| `POST /staff/support/{id}/actions` | `action`, `reason?`, `assigneeId?` | Xem bảng dưới |
+| `GET /admin/support/assignees` | — | ADMIN. Nhân viên/quản lý đang hoạt động: `items[]{accountId, name, role}` |
+
+| `action` | Ai | Điều kiện | Kết quả |
+|---|---|---|---|
+| `claim` | STAFF/ADMIN | `AI`/`WAITING`, chưa có người phụ trách đang hoạt động (người phụ trách đã bị khóa không giữ được hội thoại) | `HUMAN`, người gọi phụ trách; khác người → 409 |
+| `release` | người phụ trách hoặc ADMIN | `HUMAN`; `reason` 5–500 | `WAITING`, bỏ người phụ trách, AI **không** bật lại; tin hệ thống báo khách; nhật ký `SUPPORT_RELEASED` |
+| `reassign` | ADMIN | `WAITING`/`HUMAN`; `reason`; `assigneeId` là STAFF/ADMIN đang hoạt động (khác người hiện tại) | `HUMAN`, người nhận mới; nhật ký `SUPPORT_REASSIGNED` |
+| `takeover` | ADMIN | `WAITING`/`HUMAN`; `reason` | Quản lý thành người phụ trách; nhật ký `SUPPORT_TAKEN_OVER` |
+| `close` | người phụ trách hoặc ADMIN | chưa đóng | `CLOSED` |
+
+Lỗi: STAFF gọi `reassign`/`takeover` hoặc nhả hội thoại của người khác → 403; thiếu lý do/người nhận không hợp lệ → 422;
+CSDL báo tranh chấp (SQLite "database is locked", deadlock) sau 3 lần thử → 409, không đổi người phụ trách.
+Khóa tài khoản nhân viên (`PATCH /admin/accounts/{id}/lock`) đưa mọi hội thoại người đó đang phụ trách về `WAITING`,
+giữ lịch sử, báo khách và ghi `SUPPORT_RELEASED_ON_LOCK`.
+
+### F.4. Nhật ký email (quản trị)
+
+| Method & path | Body / query | Ghi chú |
+|---|---|---|
+| `GET /admin/communications/deliveries?status=&page=` | `status` ∈ `PENDING|RETRY|SENDING|ACCEPTED|SKIPPED|FAILED|SIMULATED` | `emailEnabled`, `mailDriver`, `testMode`, `feedback[]` (10 góp ý gần nhất), `items[]{deliveryId, title, status, attempts, errorCode, createdAt, acceptedAt, expiresAt}`. Không trả địa chỉ người nhận |
+| `POST /admin/communications/deliveries/{id}/retry` | `reason` (10–500), `acknowledgeDuplicateRisk` = true | Chỉ `FAILED`; quá hạn gửi → 409 (thông báo trong app vẫn còn); nhật ký `EMAIL_RETRY_REQUESTED`. Không gia hạn tuổi thư |
+
+`errorCode`: `EMAIL_EXPIRED` (quá hạn gửi tự động), `NO_LONGER_APPLICABLE` (đã bị thay thế/hủy/đổi lịch/đã nhận bàn/tài khoản khóa),
+`RECIPIENT_CHANGED`, `SMTP_TEMPORARY_FAILURE` (máy chủ trả 4xx, tự thử lại tối đa 3 lần), `SMTP_FAILURE_REVIEW_REQUIRED` (5xx),
+`SEND_OUTCOME_UNKNOWN_REVIEW_REQUIRED` (timeout/mất kết nối hoặc `SENDING` quá 5 phút), `SEND_ERROR_REVIEW_REQUIRED` (lỗi không
+phải SMTP), `REAL_MAILER_REQUIRED`, `MAIL_CANCELLED`.
+
+### F.5. Lệnh & hàng đợi
+
+- `php artisan dining:communications:dispatch` (scheduler mỗi phút): nhắc lịch, mời đánh giá, thông báo chat chưa đọc; đánh dấu
+  `EMAIL_EXPIRED` cho thư quá hạn; `SENDING` quá 5 phút → `FAILED`; câu hỏi AI `PROCESSING` quá 5 phút → `PENDING`. Mỗi việc chỉ được
+  đưa lại vào hàng đợi sau lease 10 phút; hàng đợi `communications` có việc tồn quá 2 phút (worker dừng) thì không đẩy thêm.
+  Chưa áp migration `2026_10_23_233204` → lệnh chỉ ghi cảnh báo `communications.migration_pending` và dừng.
+- Worker: `php artisan queue:work database --queue=communications --sleep=1 --timeout=45 --tries=1`.

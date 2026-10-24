@@ -7,6 +7,7 @@ use App\Http\Requests\Customer\CreateReservationRequest;
 use App\Http\Requests\Customer\ReservationAvailabilityRequest;
 use App\Http\Requests\Customer\UpdateReservationRequest;
 use App\Http\Resources\Customer\ReservationResource;
+use App\Models\Reservation;
 use App\Services\Customer\ReservationService;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -48,6 +49,13 @@ class ReservationController extends Controller
                 'totalPages' => $reservations->lastPage(),
             ],
         ], 'Reservations retrieved successfully');
+    }
+
+    public function show(Request $request, int $reservationId): JsonResponse
+    {
+        $reservation = Reservation::with('diningTable')->where('ma_tai_khoan', $request->user()->getKey())->findOrFail($reservationId);
+
+        return $this->successResponse(new ReservationResource($reservation));
     }
 
     public function store(CreateReservationRequest $request): JsonResponse
