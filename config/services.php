@@ -22,6 +22,12 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'esms' => [
+        'api_key' => env('ESMS_API_KEY'),
+        'secret_key' => env('ESMS_SECRET_KEY'),
+        'sandbox' => (bool) env('ESMS_SANDBOX', true),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

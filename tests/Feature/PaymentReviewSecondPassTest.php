@@ -326,7 +326,7 @@ class PaymentReviewSecondPassTest extends TestCase
     #[DataProvider('legacySurplusRefunds')]
     public function test_migration_preserves_the_owner_of_surplus_in_a_legacy_refund(int $allocationCount, string $targetKind, float $receiptAmount, float $firstRefunded): void
     {
-        $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        $this->assertTrue(DB::getDatabaseName() === ':memory:' || preg_match('/(_test|testing)(_|$)/', DB::getDatabaseName()) === 1, 'Migration regression must run only on an isolated test database.');
         $orders = collect([$this->qrOrder(50000)]);
         if ($allocationCount === 2) {
             $orders->push($this->qrOrder(50000));

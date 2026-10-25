@@ -106,7 +106,7 @@ class PaymentReviewRegressionTest extends TestCase
         $this->webhook(['orderId' => $order->ma_don_hang, 'amount' => 150000, 'gateway' => 'MB', 'transactionCode' => 'ft26review001'])
             ->assertOk()->assertJsonPath('data.duplicateCallback', true);
 
-        $this->assertSame(1, MoneyTransaction::where('ma_tham_chieu', 'like', 'FT26REVIEW001')->count() + MoneyTransaction::where('ma_tham_chieu', 'ft26review001')->count());
+        $this->assertSame(1, MoneyTransaction::whereIn('ma_tham_chieu', ['FT26REVIEW001', 'ft26review001'])->count());
         $this->assertEquals(150000, (float) $order->payment()->value('so_tien_da_thu'));
     }
 

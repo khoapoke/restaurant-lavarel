@@ -40,15 +40,21 @@ class RestaurantSeeder extends Seeder
     public function run(): void
     {
         // 1. Roles (VAI_TRO)
-        $roleAdmin = Role::create([
+        $roleAdmin = new Role([
             'ten_vai_tro' => RoleType::ADMIN->value, // Quản trị viên
         ]);
-        $roleStaff = Role::create([
+        $roleAdmin->ma_vai_tro = RoleType::ADMIN->id();
+        $roleAdmin->save();
+        $roleStaff = new Role([
             'ten_vai_tro' => RoleType::STAFF->value, // Nhân viên
         ]);
-        $roleCustomer = Role::create([
+        $roleStaff->ma_vai_tro = RoleType::STAFF->id();
+        $roleStaff->save();
+        $roleCustomer = new Role([
             'ten_vai_tro' => RoleType::CUSTOMER->value, // Khách hàng
         ]);
+        $roleCustomer->ma_vai_tro = RoleType::CUSTOMER->id();
+        $roleCustomer->save();
 
         // 2. User Profiles (NGUOI_DUNG)
         $profileAdmin = UserProfile::create([

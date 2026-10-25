@@ -515,8 +515,10 @@ class SupportChatTest extends TestCase
         $conversation = $this->conversation();
         app(SupportChatService::class)->transition($conversation, $this->account(), 'handoff');
         DB::connection()->beforeExecuting(function (string $query): void {
-            if (str_starts_with($query, 'update "support_conversations"')) {
-                throw new QueryException('sqlite', $query, [], new \PDOException('SQLSTATE[HY000]: General error: 5 database is locked'));
+            if (str_starts_with($query, 'update '.DB::connection()->getQueryGrammar()->wrapTable('support_conversations'))) {
+                $driver = DB::getDriverName();
+                $error = $driver === 'mysql' ? 'SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock' : 'SQLSTATE[HY000]: General error: 5 database is locked';
+                throw new QueryException($driver, $query, [], new \PDOException($error));
             }
         });
         Sanctum::actingAs($this->account('staff1'));

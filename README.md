@@ -1,5 +1,15 @@
 # 🍽️ Hệ Thống Quản Lý Nhà Hàng & Đặt Món Trực Tuyến (Pure RESTful API)
 
+## Database dùng chung với nhóm (2026-10-25)
+
+- Ứng dụng dùng **MySQL 8.4**, database riêng `restaurant_moc`; SQLite in-memory chỉ là mặc định của bộ test nhanh (`phpunit.xml`).
+- Máy hiện tại chạy MySQL tại `127.0.0.1:3307` qua `E:\Nam4\mysql-khoa\start-mysql.ps1`. Máy khác điền cổng MySQL thực tế (thường 3306); không chép mật khẩu hay `.env` qua Git.
+- Bản chuyển từ SQLite giữ dữ liệu nghiệp vụ và ID, đối chiếu dữ liệu trước khi chạy hai migration còn thiếu trên DB MySQL. SQLite cũ và bản sao lưu trong `.codex/mysql-switch-20261025/` được giữ để dự phòng; `.codex/` không được commit/chia sẻ vì có cấu hình và dữ liệu riêng tư.
+- DB của Khoa `restaurant_laravel_khoa` không bị thay đổi. Cache và phiên đăng nhập web tạm thời không chuyển; tài khoản, lịch sử, token API và dữ liệu nghiệp vụ được giữ.
+- Bổ sung migration **120500** trước POS **121000** để tránh trùng tên khóa ngoại MySQL khi đổi tên bảng cũ. Không sửa nội dung migration 121000 đã triển khai. Trên schema POS đã nâng cấp, 120500 không thay đổi gì.
+- Cài mới trên **database trống**: `php artisan migrate --seed`. Cập nhật database có dữ liệu: sao lưu trước, chạy `php artisan migrate`, **không chạy lại seeder** và không dùng `migrate:fresh`.
+- Khi đổi kết nối: dừng worker/scheduler, chạy `php artisan config:clear`, rồi khởi động lại API/worker sau khi kiểm tra DB đích. Không chạy kiểm thử phá dữ liệu vào `restaurant_moc` hay DB của Khoa; MySQL test phải là database riêng.
+
 ## Email, thông báo và Mộc đồng hành (2026-10-23)
 
 - Khách: chuông `/notifications`, khung **Hỏi Mộc** trên website (đăng nhập để dùng chat).
@@ -26,11 +36,11 @@ Gemini dùng `GEMINI_API_KEY` chỉ ở backend; mặc định model `gemini-3.5
 
 Nhân viên phụ trách có thể **trả hội thoại về hàng chờ**; ADMIN **chuyển người phụ trách** hoặc **tiếp quản** — đều cần lý do và được ghi nhật ký. Khóa tài khoản nhân viên đưa các hội thoại họ đang phụ trách về hàng chờ. Biên nhận giải thích tiền món, phí giao, giảm trừ/bồi hoàn và tổng; hoàn tiền sau lúc thu hiện tách riêng, biên nhận lịch sử không bị sửa.
 
-Schema mới: `2026_10_23_165959_create_guest_communications_tables.php`, `2026_10_23_191711_add_read_cursors_to_support_conversations.php` và `2026_10_23_233204_harden_guest_communications_delivery_and_feedback.php` (hạn gửi, đánh dấu đã đưa vào hàng đợi, khóa giới hạn lời mời theo ngày; chỉ thêm cột nullable). Áp riêng migration thứ ba bằng `php artisan migrate --path=database/migrations/2026_10_23_233204_harden_guest_communications_delivery_and_feedback.php` sau khi sao lưu DB, rồi `php artisan queue:restart`; **không** dùng `php artisan migrate` trơn vì sẽ chạy luôn migration sổ tiền đang chờ. Khi chưa áp, code mới vẫn chạy nhưng tạm dừng nhắc lịch/mời đánh giá/đưa email vào hàng đợi (log `communications.migration_pending`). Con trỏ đọc dùng ID tin nhắn, không so thời gian theo giây để tránh bỏ sót tin đến cùng giây. Không dùng `migrate:fresh` trên DB có dữ liệu. Máy hiện tại đã chạy riêng hai migration này; migration chỉnh sổ tiền `2026_10_23_090000` vẫn để nguyên trạng thái chờ, không tự áp dụng trong milestone này.
+Schema communications gồm `2026_10_23_165959`, `2026_10_23_191711` và `2026_10_23_233204` (hạn gửi, claim hàng đợi, khóa giới hạn đánh giá). **Ngày 25/10, DB MySQL `restaurant_moc` đã chạy đủ cả ba và migration sửa sổ tiền `2026_10_23_090000` sau khi chuyển/đối chiếu dữ liệu**. SQLite dự phòng vẫn giữ trạng thái cũ, không áp migration vào đó. Máy thành viên có dữ liệu cần sao lưu và xem `migrate:status` trước khi cập nhật; riêng migration sổ tiền phải được đối chiếu số liệu. Worker cần khởi động lại sau khi cập nhật. Khi schema communications chưa đủ, dispatcher tạm dừng (`communications.migration_pending`). Con trỏ đọc dùng ID tin nhắn, không dùng timestamp theo giây. Không dùng `migrate:fresh` trên DB có dữ liệu.
 
 Kiểm tra: `php artisan test --compact --filter='GuestCommunicationTest|SupportChatTest'`. Kịch bản trình duyệt nằm ở frontend `scripts/communications-e2e.cjs`, chỉ chạy với DB dùng một lần, email tắt và worker riêng. Bộ kiểm thử PHP dùng SQLite in-memory, không gọi SMTP hay Gemini thật.
 
-> **Backend Service:** Laravel 11 pure RESTful API phục vụ các nền tảng Frontend (React, Next.js, Mobile App, v.v.).  
+> **Backend Service:** Laravel 13 pure RESTful API phục vụ các nền tảng Frontend (React, Next.js, Mobile App, v.v.).
 > **Kiến trúc:** Service - Controller - FormRequest - API Resource với chuẩn hóa JSON Envelope và Global Exception Shielding.
 
 ---
@@ -57,8 +67,8 @@ Dự án này là phân hệ **Backend Pure RESTful API** thuộc Hệ thống Q
 
 ## 🛠️ 2. Công nghệ Sử dụng (Tech Stack)
 
-- **Framework:** Laravel 11.x
-- **Ngôn ngữ:** PHP 8.2+ / PHP 8.3 (hỗ trợ String-Backed Enums, Constructor Promotion, Attributes)
+- **Framework:** Laravel 13.x
+- **Ngôn ngữ:** PHP 8.5 trong môi trường hiện tại (xem ràng buộc chính xác trong `composer.json`)
 - **Hệ quản trị CSDL:** MySQL 8.0+ / 8.4+ 
 - **Xác thực:** Laravel Sanctum (Token-based Authentication)
 - **ORM:** Eloquent ORM (tắt `$timestamps = false`, cast mảng JSON `allergens`, `dietaryPreferences`, `savedAddresses`)
@@ -102,7 +112,7 @@ restaurant-lavarel/
 
 ### Bước 1: Yêu cầu môi trường
 Đảm bảo máy của thành viên đã cài đặt:
-- **PHP** >= 8.2 (Khuyến nghị dùng PHP 8.3 trong Laragon hoặc XAMPP).
+- **PHP** theo ràng buộc `composer.json`/`composer.lock` (máy hiện tại dùng PHP 8.5).
 - **Composer** (bản 2.x).
 - **MySQL** (chạy trên port 3306).
 
@@ -140,11 +150,11 @@ Mở file `.env` và kiểm tra cấu hình kết nối database:
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=restaurant_laravel
-DB_USERNAME=root
+DB_DATABASE=restaurant_moc
+DB_USERNAME=restaurant_moc
 DB_PASSWORD=
 ```
-*(Tạo database có tên `restaurant_laravel` trên phpMyAdmin/HeidiSQL nếu chưa có)*.
+*(Tạo database `restaurant_moc` và tài khoản có quyền trên database này; không dùng database của người khác. Máy hiện tại dùng port 3307, ví dụ trên dùng cổng MySQL thông thường 3306)*.
 
 ---
 
@@ -159,7 +169,7 @@ php artisan key:generate
 ### Bước 5: Chạy Migration & Seeder dữ liệu mẫu
 Khởi tạo cấu trúc 12 bảng và nạp sẵn dữ liệu kiểm thử (Tài khoản, Danh mục, Món ăn, Bàn ăn, Đơn hàng, Đặt bàn):
 ```bash
-php artisan migrate:fresh --seed
+php artisan migrate --seed
 ```
 
 ---

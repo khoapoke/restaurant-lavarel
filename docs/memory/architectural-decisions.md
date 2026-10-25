@@ -1,5 +1,14 @@
 # 🏛️ QUYẾT ĐỊNH KIẾN TRÚC HỆ THỐNG (ARCHITECTURAL DECISIONS)
 
+## ADR-030: Đồng nhất MySQL cho ứng dụng, SQLite chỉ cho test nhanh (2026-10-25)
+
+- Theo yêu cầu người dùng, bản Mộc dùng MySQL 8.4 tại `127.0.0.1:3307`, database riêng `restaurant_moc`, tài khoản chỉ có quyền trên database Mộc và DB test. Không dùng hay sửa `restaurant_laravel_khoa`.
+- Giữ nguyên SQLite gốc, sao lưu nhất quán và cấu hình trước chuyển trong `.codex/mysql-switch-20261025/` (không commit/chia sẻ). Sao chép dữ liệu nghiệp vụ giữ ID; cache/lock/session tạm không chuyển. Đối chiếu 36 bảng, kiểm 64 quan hệ khóa ngoại trước áp migration còn thiếu. Tổng tiền nhận/hoàn/phân bổ/đơn giữ nguyên.
+- Áp `2026_10_23_090000` và `2026_10_23_233204` trên MySQL sau khi nhập, không chạy trên SQLite dự phòng. Đã hết migration pending trên DB ứng dụng.
+- Thêm migration tiền xử lý 120500 trước POS 121000 để xử lý tên FK toàn schema của MySQL, không sửa migration đã triển khai; no-op khi POS đã nâng cấp.
+- Bộ test mặc định tiếp tục SQLite in-memory. Kiểm thử MySQL dùng database riêng có `_test`/`testing` trong tên; TestCase chặn DB nghiệp vụ trước khi RefreshDatabase chạy. Không dùng migrate:fresh cho DB ứng dụng.
+- Thay đổi kết nối không bật gửi SMS, không gửi SMTP/Gemini thật trong kiểm thử, không tự chạy scheduler/worker có tác dụng bên ngoài.
+
 Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc code và logic nghiệp vụ đã thống nhất cho dự án `restaurant-lavarel`.
 
 ---
