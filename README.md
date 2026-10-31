@@ -145,18 +145,19 @@ Mặc định ứng dụng sẽ chạy tại địa chỉ: `http://127.0.0.1:800
 
 ## 👥 5. Danh Sách Tài Khoản Mẫu Để Kiểm Thử (Seed Accounts)
 
-Hệ thống đã chuẩn bị sẵn các tài khoản với mọi vai trò. **Mật khẩu mặc định cho tất cả các tài khoản là `123`**:
+Hệ thống đã chuẩn bị sẵn các tài khoản với mọi vai trò phục vụ kiểm thử:
 
 | STT | Username | Password | Vai trò | Email | Trạng thái | Mục đích kiểm thử |
 |:---:|:---|:---:|:---|:---|:---:|:---|
-| 1 | `admin` | `123` | **Quản trị viên** (Admin) | `admin@restaurant.com` | `ACTIVE` | Test API Quản trị (`/api/v1/admin/*`) |
-| 2 | `staff1` | `123` | **Nhân viên** (Staff) | `staff1@restaurant.com` | `ACTIVE` | Test API Bếp/Thu ngân/Đặt bàn |
-| 3 | `kh1` | `123` | **Khách hàng** (Customer) | `khachhang1@gmail.com` | `ACTIVE` | Test Hồ sơ, Giỏ hàng, Đặt món |
-| 4 | `kh2` | `123` | **Khách hàng** (Customer) | `khachhang2@gmail.com` | `ACTIVE` | Test Khách hàng 2 |
-| 5 | `kh_locked`| `123` | **Khách hàng** (Customer) | `locked@gmail.com` | `LOCKED` | Test chặn đăng nhập tài khoản bị khóa (403) |
+| 1 | `admin` | `Password@123` | **Quản trị viên** (Admin) | `admin@restaurant.com` | `ACTIVE` | Test API Quản trị (`/api/v1/admin/*`) |
+| 2 | `staff1` | `Password@123` | **Nhân viên** (Staff) | `staff1@restaurant.com` | `ACTIVE` | Test API Bếp/Thu ngân/Đặt bàn |
+| 3 | `kh1` | `123` | **Khách hàng** (Customer) | `khachhang1@gmail.com` | `ACTIVE` | Test Hồ sơ, Giỏ hàng, Đặt món (tự nâng cấp BCrypt) |
+| 4 | `kh2` | `Password@123` | **Khách hàng** (Customer) | `khachhang2@gmail.com` | `ACTIVE` | Test Khách hàng 2 |
+| 5 | `kh_locked`| `Password@123` | **Khách hàng** (Customer) | `locked@gmail.com` | `LOCKED` | Test chặn đăng nhập tài khoản bị khóa (403) |
 
 > [!NOTE]
-> Khi đăng nhập lần đầu với mật khẩu `123`, hệ thống sẽ tự động băm mật khẩu sang chuẩn **BCrypt** an toàn và lưu vào CSDL mà không làm gián đoạn người dùng.
+> - Tài khoản `admin`, `staff1`, `kh2`, `kh_locked` mặc định dùng mật khẩu băm BCrypt chuẩn: **`Password@123`**.
+> - Riêng tài khoản `kh1` dùng mật khẩu mẫu đơn giản là **`123`** để kiểm thử tính năng tự động phát hiện và băm sang **BCrypt** an toàn ngay trong lần đăng nhập đầu tiên.
 
 ---
 

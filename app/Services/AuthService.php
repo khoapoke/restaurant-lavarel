@@ -90,7 +90,7 @@ class AuthService
             ->first();
 
         if (!$account) {
-            throw new AuthenticationException('Invalid credentials');
+            throw new AuthenticationException('Invalid credentials or account has been locked');
         }
 
         // STEP 2: Kiểm tra mật khẩu (hỗ trợ cả BCrypt và legacy plaintext '123' từ file SQL mẫu)
@@ -109,7 +109,7 @@ class AuthService
         }
 
         if (!$isPasswordValid) {
-            throw new AuthenticationException('Invalid credentials');
+            throw new AuthenticationException('Invalid credentials or account has been locked');
         }
 
         // STEP 3: Kiểm tra trạng thái khóa tài khoản (USR-09)
@@ -133,11 +133,21 @@ class AuthService
     /**
      * Revoke current access token (USR-03).
      *
-     * @param Account $account
+     * @param Account|null $account
      * @return void
      */
     public function logout(?Account $account): void
     {
-        $account?->currentAccessToken()?->delete();
+        if (!$account) {
+            return;
+        }
+
+        /** @var \Laravel\Sanctum\PersonalAccessToken|null $token */
+        $token = $account->currentAccessToken();
+        if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+            $token->delete();
+        } elseif ($token && method_exists($token, 'delete')) {
+            $token->delete();
+        }
     }
 }

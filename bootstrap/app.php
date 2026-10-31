@@ -62,10 +62,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // Handle 401: Unauthenticated / Missing Token
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
+                $message = $e->getMessage();
+                if (empty($message) || $message === 'Unauthenticated.') {
+                    $message = 'Unauthenticated or token is missing/invalid';
+                }
+
                 return response()->json([
                     'success' => false,
                     'code' => 401,
-                    'message' => 'Unauthenticated or token is missing/invalid',
+                    'message' => $message,
                     'errors' => null,
                 ], 401);
             }
