@@ -1,0 +1,901 @@
+# TẦNG L2: ĐẶC TẢ CHI TIẾT LARAVEL RESTFUL API (API SPECIFICATIONS)
+
+Tài liệu này định nghĩa toàn bộ các API Endpoints được xây dựng trên nền tảng **Laravel 10/11 + Laravel Sanctum**, phân tách độc lập thành hai phân hệ: **CUSTOMER APIs** và **ADMIN APIs**.
+
+---
+
+## QUY ƯỚC KIẾN TRÚC API TRONG LARAVEL (LARAVEL API CONVENTIONS)
+
+1. **Định tuyến (`routes/api.php`):** Toàn bộ route có tiền tố `/api/v1`.
+2. **Headers Bắt buộc từ Client (ReactJS / NextJS):**
+   - `Accept: application/json` *(Cực kỳ quan trọng trong Laravel: Nếu thiếu header này, khi lỗi Validation hoặc lỗi 401, Laravel sẽ redirect về trang HTML `/login` thay vì trả về JSON!)*
+   - `Content-Type: application/json`
+   - `Authorization: Bearer <sanctum_plain_text_token>` (đối với các API yêu cầu đăng nhập).
+3. **Middleware Pipeline:**
+   - `auth:sanctum`: Xác thực Token và nạp `Account` hiện tại vào `$request->user()`.
+   - `account.active`: Middleware tùy chỉnh kiểm tra `$request->user()->trang_thai === AccountStatus::ACTIVE`. Nếu bị khóa (`LOCKED`), hủy token và trả về `403 Forbidden`.
+   - `role:CUSTOMER` / `role:ADMIN`: Kiểm tra `$request->user()->ma_vai_tro` (`3` = Customer, `1` = Admin).
+4. **Chuẩn Mã Lỗi HTTP trong Laravel:**
+   - `200 OK` / `201 Created`: Thành công.
+   - `400 Bad Request`: Lỗi tham số hoặc điều kiện nghiệp vụ cơ bản.
+   - `401 Unauthorized`: Chưa đăng nhập hoặc Token không hợp lệ / hết hạn.
+   - `403 Forbidden`: Tài khoản bị khóa hoặc không đủ quyền (`Role`).
+   - `404 Not Found`: Không tìm thấy bản ghi (`ModelNotFoundException`).
+   - `409 Conflict`: Xung đột trạng thái nghiệp vụ (VD: Hủy đơn khi bếp đã nấu, đặt trùng giờ bàn).
+   - `422 Unprocessable Entity`: Lỗi dữ liệu đầu vào từ `FormRequest` chuẩn của Laravel.
+
+---
+
+## PHẦN 0: SHARED AUTHENTICATION APIS (`AuthController`)
+
+### 0.1. Đăng ký tài khoản Khách hàng (`USR-01`)
+- **Method & URL:** `POST /api/v1/auth/register`
+- **Controller & FormRequest:** `AuthController@register` | `RegisterRequest`
+- **Request Body:**
+```json
+{
+  "username": "khachhang_moi",
+  "password": "Password@123",
+  "passwordConfirmation": "Password@123",
+  "email": "khachhang_moi@gmail.com",
+  "fullName": "Nguyễn Minh Tuấn",
+  "phoneNumber": "0987654321",
+  "birthDate": "1999-08-15",
+  "address": "140 Lê Trọng Tấn, Quận Tân Phú, TP.HCM"
+}
+```
+- **Response JSON Sample (Success - 201 Created):**
+```json
+{
+  "success": true,
+  "code": 201,
+  "message": "Account registered successfully",
+  "data": {
+    "accessToken": "1|laravel_sanctum_token_string_example_abc123",
+    "tokenType": "Bearer",
+    "account": {
+      "accountId": 5,
+      "username": "khachhang_moi",
+      "email": "khachhang_moi@gmail.com",
+      "status": "ACTIVE",
+      "role": "CUSTOMER",
+      "userProfile": {
+        "userId": 5,
+        "fullName": "Nguyễn Minh Tuấn",
+        "phoneNumber": "0987654321",
+        "birthDate": "1999-08-15",
+        "address": "140 Lê Trọng Tấn, Quận Tân Phú, TP.HCM"
+      },
+      "cartId": 4
+    }
+  }
+}
+```
+- **Response JSON Sample (Error - 422 Unprocessable Entity - Chuẩn Laravel Validation):**
+```json
+{
+  "success": false,
+  "code": 422,
+  "message": "The given data was invalid.",
+  "errors": {
+    "username": [
+      "The username has already been taken."
+    ],
+    "phoneNumber": [
+      "The phone number format is invalid."
+    ]
+  }
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Sử dụng Rule `unique:TAI_KHOAN,ten_dang_nhap` và `unique:TAI_KHOAN,email` trong `RegisterRequest`. Bọc trong `DB::transaction()` để tạo tuần tự: `UserProfile` (`NGUOI_DUNG`) $\rightarrow$ `Account` (`TAI_KHOAN` với `ma_vai_tro = 3`, `mat_khau = Hash::make($request->password)`) $\rightarrow$ `Cart` (`GIO_HANG`).
+
+---
+
+### 0.2. Đăng nhập hệ thống (`USR-02`)
+- **Method & URL:** `POST /api/v1/auth/login`
+- **Controller & FormRequest:** `AuthController@login` | `LoginRequest`
+- **Request Body:**
+```json
+{
+  "username": "kh1",
+  "password": "123",
+  "rememberMe": true
+}
+```
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Login successful",
+  "data": {
+    "accessToken": "2|sanctum_token_xyz987654321",
+    "tokenType": "Bearer",
+    "expiresAt": "2026-07-10T08:05:00Z",
+    "account": {
+      "accountId": 3,
+      "username": "kh1",
+      "email": "khachhang1@gmail.com",
+      "role": "CUSTOMER",
+      "status": "ACTIVE",
+      "userProfile": {
+        "userId": 3,
+        "fullName": "Lê Hoàng Hùng",
+        "phoneNumber": "0923456789",
+        "address": "789 Cách Mạng Tháng 8"
+      }
+    }
+  }
+}
+```
+- **Response JSON Sample (Error - 401 Unauthorized / 403 Forbidden):**
+```json
+{
+  "success": false,
+  "code": 401,
+  "message": "Invalid credentials or account has been locked",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Tìm `Account::where('ten_dang_nhap', $request->username)->first()`. Hỗ trợ tự động nâng cấp mật khẩu mẫu `'123'` sang `BCrypt` nếu DB vừa chạy script SQL mẫu. Cấp Sanctum Token qua `$account->createToken('auth_token', [$roleAbility], $expiresAt)->plainTextToken`.
+
+---
+
+### 0.3. Đăng xuất hệ thống
+- **Method & URL:** `POST /api/v1/auth/logout`
+- **Middleware:** `auth:sanctum`
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Logged out successfully",
+  "data": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Thực thi `$request->user()->currentAccessToken()->delete()` để hủy Token hiện tại.
+
+---
+
+## PHẦN A: CUSTOMER APIS (PHÂN HỆ KHÁCH HÀNG)
+
+### A.1. Quản lý Hồ sơ, Địa chỉ & Dị ứng (`Customer\ProfileController`)
+
+#### 1. Xem hồ sơ cá nhân (`USR-03`)
+- **Method & URL:** `GET /api/v1/customer/profile`
+- **Middleware:** `auth:sanctum`, `account.active`, `role:CUSTOMER`
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Profile retrieved successfully",
+  "data": {
+    "accountId": 3,
+    "username": "kh1",
+    "email": "khachhang1@gmail.com",
+    "userId": 3,
+    "fullName": "Lê Hoàng Hùng",
+    "birthDate": "1995-12-01",
+    "phoneNumber": "0923456789",
+    "defaultAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+    "savedAddresses": [
+      {
+        "addressId": "addr_1",
+        "recipientName": "Lê Hoàng Hùng",
+        "recipientPhone": "0923456789",
+        "fullAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+        "isDefault": true
+      }
+    ],
+    "allergies": ["PEANUT", "SHELLFISH"],
+    "dietaryPreferences": ["LOW_SUGAR"]
+  }
+}
+```
+- **Response JSON Sample (Error - 401 Unauthorized):**
+```json
+{
+  "success": false,
+  "code": 401,
+  "message": "Unauthenticated.",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Sử dụng `$request->user()->load('userProfile')` và trả về qua `CustomerProfileResource`.
+
+#### 2. Cập nhật hồ sơ, địa chỉ nhận hàng & thông tin dị ứng (`USR-04`, `USR-05`, `USR-06`)
+- **Method & URL:** `PUT /api/v1/customer/profile`
+- **Request Body:**
+```json
+{
+  "fullName": "Lê Hoàng Hùng",
+  "birthDate": "1995-12-01",
+  "phoneNumber": "0923456789",
+  "email": "khachhang1_new@gmail.com",
+  "defaultAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+  "savedAddresses": [
+    {
+      "addressId": "addr_1",
+      "recipientName": "Lê Hoàng Hùng",
+      "recipientPhone": "0923456789",
+      "fullAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+      "isDefault": true
+    }
+  ],
+  "allergies": ["PEANUT", "SHELLFISH"],
+  "dietaryPreferences": ["HIGH_PROTEIN"]
+}
+```
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Profile updated successfully",
+  "data": {
+    "accountId": 3,
+    "email": "khachhang1_new@gmail.com",
+    "fullName": "Lê Hoàng Hùng",
+    "phoneNumber": "0923456789",
+    "defaultAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+    "allergies": ["PEANUT", "SHELLFISH"],
+    "dietaryPreferences": ["HIGH_PROTEIN"]
+  }
+}
+```
+- **Response JSON Sample (Error - 422 Unprocessable Entity):**
+```json
+{
+  "success": false,
+  "code": 422,
+  "message": "Validation failed",
+  "errors": {
+    "email": ["The email has already been taken."]
+  }
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Cập nhật bảng `TAI_KHOAN` (`email`) và bảng `NGUOI_DUNG` (`ho_ten`, `ngay_sinh`, `so_dien_thoai`, `dia_chi`, cùng các trường mảng JSON `allergies`, `dietaryPreferences`).
+
+---
+
+### A.2. Thực đơn, Tìm kiếm, Lọc & Gợi ý theo Thời tiết (`Customer\MenuController`)
+
+#### 1. Xem danh sách danh mục & món ăn có bộ lọc (`MNU-01`, `MNU-02`, `MNU-03`)
+- **Method & URL:**
+  - Danh mục: `GET /api/v1/customer/categories`
+  - Danh sách món ăn: `GET /api/v1/customer/dishes`
+- **Query Params (`GET /api/v1/customer/dishes`):**
+  - `keyword` (`string`, optional): Tìm kiếm theo `ten_mon_an`.
+  - `categoryId` (`int`, optional): Lọc theo `ma_danh_muc`.
+  - `minPrice` (`numeric`, optional), `maxPrice` (`numeric`, optional): Lọc theo khoảng `gia_tien`.
+  - `isAvailable` (`boolean`, optional): Lọc theo tình trạng còn bán.
+  - `excludeAllergens` (`string`, optional): Chuỗi chất dị ứng cách nhau dấu phẩy (VD: `SHELLFISH,PEANUT`).
+  - `page` (`int`, default `1`), `perPage` (`int`, default `12`). *(Lưu ý: Phân trang mặc định của Laravel `paginate()` bắt đầu từ `page = 1`)*.
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Dishes retrieved successfully",
+  "data": {
+    "items": [
+      {
+        "dishId": 2,
+        "dishName": "Bò sốt tiêu đen",
+        "price": 350000.00,
+        "description": "Thịt bò Mỹ mềm ngon kèm sốt tiêu đen đậm đà",
+        "imageUrl": "bo_tieu_den.jpg",
+        "categoryId": 2,
+        "categoryName": "Món chính",
+        "isAvailable": true,
+        "ingredients": ["Thịt bò Mỹ", "Tiêu đen", "Bơ lạt"],
+        "allergens": ["DAIRY"]
+      }
+    ],
+    "pagination": {
+      "currentPage": 1,
+      "perPage": 12,
+      "totalItems": 1,
+      "lastPage": 1
+    }
+  }
+}
+```
+- **Response JSON Sample (Error - 400 Bad Request):**
+```json
+{
+  "success": false,
+  "code": 400,
+  "message": "minPrice cannot be greater than maxPrice",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Sử dụng Eloquent Local Scope `Dish::query()->active()->with('category')->when(...)` để lọc linh hoạt và loại bỏ các món có chứa `excludeAllergens`.
+
+#### 2. Xem chi tiết món ăn (`MNU-07`)
+- **Method & URL:** `GET /api/v1/customer/dishes/{dishId}`
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Dish detail fetched successfully",
+  "data": {
+    "dishId": 1,
+    "dishName": "Súp bào ngư",
+    "price": 150000.00,
+    "description": "Súp bào ngư thượng hạng giàu dinh dưỡng",
+    "imageUrl": "sup_bao_ngu.jpg",
+    "category": {
+      "categoryId": 1,
+      "categoryName": "Khai vị"
+    },
+    "isAvailable": true,
+    "ingredients": ["Bào ngư tươi", "Nấm đông cô", "Trứng gà"],
+    "allergens": ["SHELLFISH", "EGG"]
+  }
+}
+```
+- **Response JSON Sample (Error - 404 Not Found):**
+```json
+{
+  "success": false,
+  "code": 404,
+  "message": "Dish not found or unavailable",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Truy vấn `Dish::active()->with('category')->findOrFail($dishId)`.
+
+#### 3. Gợi ý món ăn theo Thời tiết & Tự động loại trừ Dị ứng (Extended Feature)
+- **Method & URL:** `GET /api/v1/customer/recommendations/weather`
+- **Query Params:** `lat` (`numeric`, required), `lon` (`numeric`, required).
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Weather recommendations generated successfully",
+  "data": {
+    "weather": {
+      "city": "Ho Chi Minh City",
+      "temperatureCelsius": 33.8,
+      "condition": "HOT_SUNNY",
+      "advice": "Trời nắng nóng (33.8°C), ưu tiên các món thanh mát. Đã lọc bỏ món chứa chất gây dị ứng: SHELLFISH, PEANUT."
+    },
+    "excludedAllergens": ["SHELLFISH", "PEANUT"],
+    "recommendedDishes": [
+      {
+        "dishId": 4,
+        "dishName": "Trà đào cam sả",
+        "price": 45000.00,
+        "imageUrl": "tra_dao.jpg",
+        "categoryName": "Đồ uống",
+        "allergens": []
+      }
+    ]
+  }
+}
+```
+- **Response JSON Sample (Error - 422 Unprocessable Entity):**
+```json
+{
+  "success": false,
+  "code": 422,
+  "message": "Coordinates lat and lon are required",
+  "errors": {
+    "lat": ["The lat field is required."],
+    "lon": ["The lon field is required."]
+  }
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Dùng `Http::timeout(5)->get('https://api.openweathermap.org/data/2.5/weather', ...)` kết hợp `Cache::remember()` trong 15 phút theo tọa độ làm tròn để tối ưu tốc độ (< 3 giây) và loại bỏ 100% món chứa chất dị ứng của khách.
+
+---
+
+### A.3. Quản lý Giỏ hàng (`Customer\CartController`)
+
+#### 1. Xem giỏ hàng, Thêm món, Cập nhật số lượng & Xóa món (`CRT-01` $\rightarrow$ `CRT-04`, `MNU-08`)
+- **Method & URL:**
+  - Xem giỏ hàng (`CRT-04`): `GET /api/v1/customer/cart`
+  - Thêm món vào giỏ (`CRT-01`): `POST /api/v1/customer/cart/items`
+  - Cập nhật số lượng (`CRT-02`): `PUT /api/v1/customer/cart/items/{dishId}`
+  - Xóa món khỏi giỏ (`CRT-03`): `DELETE /api/v1/customer/cart/items/{dishId}`
+- **Request Body (`POST /api/v1/customer/cart/items`):**
+```json
+{
+  "dishId": 1,
+  "quantity": 2,
+  "selectedOptions": "Chén tiêu chuẩn",
+  "itemNote": "Không hành lá"
+}
+```
+- **Response JSON Sample (Success - 200 OK - Cấu trúc trả về đồng nhất cho mọi thao tác Giỏ hàng):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Cart updated successfully",
+  "data": {
+    "cartId": 1,
+    "accountId": 3,
+    "items": [
+      {
+        "dishId": 1,
+        "dishName": "Súp bào ngư",
+        "imageUrl": "sup_bao_ngu.jpg",
+        "unitPrice": 150000.00,
+        "quantity": 2,
+        "subTotal": 300000.00,
+        "isAvailable": true
+      },
+      {
+        "dishId": 2,
+        "dishName": "Bò sốt tiêu đen",
+        "imageUrl": "bo_tieu_den.jpg",
+        "unitPrice": 350000.00,
+        "quantity": 1,
+        "subTotal": 350000.00,
+        "isAvailable": true
+      }
+    ],
+    "totalQuantity": 3,
+    "estimatedTotalAmount": 650000.00
+  }
+}
+```
+- **Response JSON Sample (Error - 400 Bad Request):**
+```json
+{
+  "success": false,
+  "code": 400,
+  "message": "Dish is out of stock or quantity is invalid",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel Pivot Handling):**
+  - Vì bảng `MON_AN_GIO_HANG` dùng khóa chính phức hợp `(ma_gio_hang, ma_mon_an)`, Controller sử dụng quan hệ `BelongsToMany` (`$cart->dishes()`):
+    - Khi thêm món: Kiểm tra nếu đã có trong giỏ thì gọi `$cart->dishes()->updateExistingPivot($dishId, ['so_luong' => $newQty])`, nếu chưa có thì gọi `$cart->dishes()->attach($dishId, ['so_luong' => $qty])`.
+    - Khi xóa món: Gọi `$cart->dishes()->detach($dishId)`. Cách này không bao giờ bị lỗi Composite Key trong Laravel!
+
+---
+
+### A.4. Checkout, Lịch sử Đơn hàng & Thanh toán QR (`Customer\OrderController` & `PaymentController`)
+
+#### 1. Tạo đơn hàng - Checkout (`ORD-01`, `ORD-02`, `ORD-03`)
+- **Method & URL:** `POST /api/v1/customer/orders/checkout`
+- **Request Body:**
+```json
+{
+  "fulfillmentType": "DELIVERY",
+  "recipientName": "Lê Hoàng Hùng",
+  "recipientPhone": "0923456789",
+  "shippingAddress": "789 Cách Mạng Tháng 8, Quận 3, TP.HCM",
+  "paymentMethod": "BANK_TRANSFER_QR",
+  "orderNote": "Gọi điện khi tới sảnh"
+}
+```
+- **Response JSON Sample (Success - 201 Created):**
+```json
+{
+  "success": true,
+  "code": 201,
+  "message": "Order created successfully",
+  "data": {
+    "orderId": 4,
+    "orderDate": "2026-06-10T10:15:00",
+    "status": "PENDING_CONFIRMATION",
+    "totalAmount": 650000.00,
+    "shippingAddress": "[DELIVERY] Lê Hoàng Hùng - 0923456789 | 789 Cách Mạng Tháng 8, Quận 3, TP.HCM | Note: Gọi điện khi tới sảnh",
+    "payment": {
+      "paymentId": 4,
+      "amount": 650000.00,
+      "paymentMethod": "BANK_TRANSFER_QR",
+      "status": "UNPAID"
+    },
+    "items": [
+      {
+        "dishId": 1,
+        "dishName": "Súp bào ngư",
+        "quantity": 2,
+        "unitPrice": 150000.00,
+        "subTotal": 300000.00
+      },
+      {
+        "dishId": 2,
+        "dishName": "Bò sốt tiêu đen",
+        "quantity": 1,
+        "unitPrice": 350000.00,
+        "subTotal": 350000.00
+      }
+    ]
+  }
+}
+```
+- **Response JSON Sample (Error - 400 Bad Request):**
+```json
+{
+  "success": false,
+  "code": 400,
+  "message": "Cannot checkout an empty cart",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Thực thi trong `DB::transaction()`. Ghi chi tiết món vào `CHI_TIET_DON_HANG` bằng `$order->dishes()->attach($pivotData)` (với `so_luong` và `don_gia`), tạo `Payment` (`THANH_TOAN`) và xóa sạch giỏ bằng `$cart->dishes()->detach()`.
+
+#### 2. Xem lịch sử, chi tiết đơn hàng & Yêu cầu hủy đơn (`ORD-04`, `ORD-05`, `ORD-06`)
+- **Method & URL:**
+  - Danh sách lịch sử đơn (`ORD-04`): `GET /api/v1/customer/orders`
+  - Xem chi tiết đơn (`ORD-05`): `GET /api/v1/customer/orders/{orderId}`
+  - Khách yêu cầu hủy đơn (`ORD-06`): `POST /api/v1/customer/orders/{orderId}/cancel` (Body: `{"cancelReason": "Đổi ý chọn món khác"}`)
+- **Response JSON Sample (Success - 200 OK - Khi hủy đơn `ORD-06`):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Order cancelled successfully",
+  "data": {
+    "orderId": 3,
+    "status": "CANCELLED"
+  }
+}
+```
+- **Response JSON Sample (Error - 409 Conflict):**
+```json
+{
+  "success": false,
+  "code": 409,
+  "message": "Order cannot be cancelled because it is already being prepared by the kitchen",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Khách hàng chỉ hủy được khi `$order->trang_thai === OrderStatus::PENDING_CONFIRMATION`.
+
+#### 3. Tạo mã QR Thanh toán, Xem trạng thái & Thử lại (`PAY-01`, `PAY-02`, `PAY-03`)
+- **Method & URL:**
+  - Sinh mã QR (`PAY-01`): `POST /api/v1/customer/payments/{orderId}/qr`
+  - Kiểm tra kết quả giao dịch (`PAY-02`): `GET /api/v1/customer/payments/{orderId}/status`
+  - Thử lại thanh toán khi lỗi/hết hạn (`PAY-03`): `POST /api/v1/customer/payments/{orderId}/retry`
+  - Webhook nhận kết quả từ Cổng thanh toán: `POST /api/v1/webhooks/payment-callback`
+- **Response JSON Sample (Success - 200 OK - Sinh mã QR):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "QR code generated successfully",
+  "data": {
+    "paymentId": 4,
+    "orderId": 4,
+    "amount": 650000.00,
+    "paymentMethod": "BANK_TRANSFER_QR",
+    "status": "UNPAID",
+    "qrImageUrl": "https://img.vietqr.io/image/970436-1029384756-compact2.png?amount=650000&addInfo=DH4%20THANH%20TOAN",
+    "transferContent": "DH4 THANH TOAN",
+    "expiresAt": "2026-06-10T10:30:00Z"
+  }
+}
+```
+- **Response JSON Sample (Error - 409 Conflict):**
+```json
+{
+  "success": false,
+  "code": 409,
+  "message": "Order has already been paid",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Tích hợp chuẩn VietQR/PayOS/SePay. Khi Webhook gọi về `/api/v1/webhooks/payment-callback`, đối chiếu chữ ký HMAC và số tiền `so_tien` trước khi cập nhật `THANH_TOAN.trang_thai = PaymentStatus::PAID`.
+
+---
+
+### A.5. Đặt bàn Trực tuyến (`Customer\ReservationController`)
+
+#### 1. Tra cứu bàn trống, Đặt bàn, Chỉnh sửa & Hủy đặt bàn (`BKG-01` $\rightarrow$ `BKG-04`)
+- **Method & URL:**
+  - Tìm bàn trống theo ngày/giờ/số người (`BKG-01`): `GET /api/v1/customer/tables/available?date=2026-06-15&time=19:00&guestCount=4`
+  - Tạo lượt đặt bàn (`BKG-02`): `POST /api/v1/customer/reservations`
+  - Xem lịch sử đặt bàn của khách: `GET /api/v1/customer/reservations`
+  - Sửa lượt đặt bàn (`BKG-03`): `PUT /api/v1/customer/reservations/{reservationId}`
+  - Hủy lượt đặt bàn (`BKG-04`): `POST /api/v1/customer/reservations/{reservationId}/cancel`
+- **Request Body (`POST /api/v1/customer/reservations`):**
+```json
+{
+  "tableId": 1,
+  "reservationTime": "2026-06-15 19:00:00",
+  "guestCount": 4,
+  "note": "Cần chuẩn bị ghế trẻ em"
+}
+```
+- **Response JSON Sample (Success - 201 Created):**
+```json
+{
+  "success": true,
+  "code": 201,
+  "message": "Reservation created successfully",
+  "data": {
+    "reservationId": 4,
+    "reservationTime": "2026-06-15T19:00:00",
+    "guestCount": 4,
+    "status": "PENDING",
+    "note": "Cần chuẩn bị ghế trẻ em",
+    "table": {
+      "tableId": 1,
+      "tableName": "Bàn số 1",
+      "capacity": 4,
+      "location": "Khu vực sảnh chính"
+    }
+  }
+}
+```
+- **Response JSON Sample (Error - 409 Conflict):**
+```json
+{
+  "success": false,
+  "code": 409,
+  "message": "Cannot modify or cancel reservation less than 60 minutes before scheduled time",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Dùng thư viện `Carbon` để kiểm tra điều kiện báo trước 2 tiếng (nếu có yêu cầu đặc biệt) và sửa/hủy trước tối thiểu 1 tiếng (`now()->diffInMinutes($reservation->thoi_gian, false) >= 60`).
+
+---
+
+## PHẦN B: ADMIN APIS (PHÂN HỆ QUẢN TRỊ VIÊN)
+
+### B.1. Quản lý Người dùng (`Admin\AccountController`)
+
+#### 1. Xem danh sách, Tìm kiếm, Khóa & Mở khóa tài khoản (`USR-07` $\rightarrow$ `USR-10`)
+- **Method & URL:**
+  - Danh sách & tìm kiếm (`USR-07`, `USR-08`): `GET /api/v1/admin/accounts?keyword=Hung&status=ACTIVE&page=1`
+  - Khóa tài khoản (`USR-09`): `PATCH /api/v1/admin/accounts/{accountId}/lock`
+  - Mở khóa tài khoản (`USR-10`): `PATCH /api/v1/admin/accounts/{accountId}/unlock`
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Account locked successfully",
+  "data": {
+    "accountId": 3,
+    "username": "kh1",
+    "email": "khachhang1@gmail.com",
+    "status": "LOCKED",
+    "roleName": "Khách hàng",
+    "fullName": "Lê Hoàng Hùng",
+    "phoneNumber": "0923456789"
+  }
+}
+```
+- **Response JSON Sample (Error - 400 Bad Request):**
+```json
+{
+  "success": false,
+  "code": 400,
+  "message": "Admin cannot lock their own account",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Trong Model `Account`, thuộc tính `$hidden = ['mat_khau']` đảm bảo mật khẩu không bao giờ xuất hiện trong JSON. Khi khóa tài khoản, gọi `$targetAccount->tokens()->delete()` để đăng xuất cưỡng bức người dùng đó ngay lập tức.
+
+---
+
+### B.2. Quản lý Danh mục & Món ăn (`Admin\CategoryController` & `Admin\DishController`)
+
+#### 1. CRUD Danh mục & Món ăn, Ẩn/Hiện, Còn bán & Xóa mềm (`MNU-09` $\rightarrow$ `MNU-17`)
+- **Method & URL:**
+  - Thêm / Sửa / Ẩn-Hiện / Xóa mềm Danh mục (`MNU-09` $\rightarrow$ `MNU-12`):
+    - `POST /api/v1/admin/categories`
+    - `PUT /api/v1/admin/categories/{categoryId}`
+    - `PATCH /api/v1/admin/categories/{categoryId}/visibility`
+    - `DELETE /api/v1/admin/categories/{categoryId}`
+  - Thêm / Sửa / Bật-Tắt Còn bán / Ẩn-Hiện / Xóa mềm Món ăn (`MNU-13` $\rightarrow$ `MNU-17`):
+    - `POST /api/v1/admin/dishes`
+    - `PUT /api/v1/admin/dishes/{dishId}`
+    - `PATCH /api/v1/admin/dishes/{dishId}/availability`
+    - `PATCH /api/v1/admin/dishes/{dishId}/visibility`
+    - `DELETE /api/v1/admin/dishes/{dishId}`
+- **Request Body (`POST /api/v1/admin/dishes`):**
+```json
+{
+  "dishName": "Gà nướng Tây Bắc",
+  "price": 280000.00,
+  "description": "Gà đi bộ nướng mật ong và mắc khén",
+  "imageUrl": "ga_nuong.jpg",
+  "categoryId": 2,
+  "ingredients": ["Gà ta", "Mật ong", "Mắc khén"],
+  "allergens": [],
+  "weatherTags": ["RAINY_OR_COLD", "PLEASANT_NORMAL"],
+  "isAvailable": true,
+  "isVisible": true
+}
+```
+- **Response JSON Sample (Success - 201 Created / 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Dish saved successfully",
+  "data": {
+    "dishId": 3,
+    "dishName": "Gà nướng Tây Bắc",
+    "price": 280000.00,
+    "categoryId": 2,
+    "isAvailable": true,
+    "isVisible": true,
+    "isDeleted": false
+  }
+}
+```
+- **Response JSON Sample (Error - 422 Unprocessable Entity):**
+```json
+{
+  "success": false,
+  "code": 422,
+  "message": "Validation failed",
+  "errors": {
+    "categoryId": ["The selected category id does not exist in DANH_MUC."]
+  }
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Khi gọi `DELETE /api/v1/admin/dishes/{dishId}`, tuyệt đối **không gọi `$dish->delete()` vật lý** vì sẽ vi phạm khóa ngoại `FK_CTDONHANG_MON_AN` trong bảng `CHI_TIET_DON_HANG`. Thay vào đó, cập nhật cờ xóa mềm (`isDeleted = true`, `isVisible = false`).
+
+---
+
+### B.3. Quản lý Đơn hàng & Thanh toán (`Admin\OrderController` & `Admin\PaymentController`)
+
+#### 1. Xem danh sách đơn, Chuyển trạng thái tuần tự & Hủy đơn (`ORD-07` $\rightarrow$ `ORD-12`)
+- **Method & URL:**
+  - Danh sách đơn hàng (`ORD-07`): `GET /api/v1/admin/orders?status=PENDING_CONFIRMATION&page=1`
+  - Chuyển trạng thái đơn (`ORD-08` $\rightarrow$ `ORD-11`): `PATCH /api/v1/admin/orders/{orderId}/status`
+  - Hủy đơn kèm lý do (`ORD-12`): `POST /api/v1/admin/orders/{orderId}/cancel`
+- **Request Body (`PATCH /api/v1/admin/orders/{orderId}/status`):**
+```json
+{
+  "targetStatus": "PREPARING"
+}
+```
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Order status updated successfully",
+  "data": {
+    "orderId": 2,
+    "previousStatus": "CONFIRMED",
+    "currentStatus": "PREPARING"
+  }
+}
+```
+- **Response JSON Sample (Error - 400 Bad Request):**
+```json
+{
+  "success": false,
+  "code": 400,
+  "message": "Invalid status transition from COMPLETED to PREPARING",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Kiểm tra tính hợp lệ của luồng trạng thái thông qua hàm `OrderStatus::canTransitionTo($newStatus)`.
+
+#### 2. Tra cứu giao dịch, Đối soát, Hoàn tiền & Xem log lỗi Callback (`PAY-04` $\rightarrow$ `PAY-07`)
+- **Method & URL:**
+  - Tra cứu giao dịch (`PAY-04`): `GET /api/v1/admin/payments`
+  - Đối soát số tiền (`PAY-05`): `POST /api/v1/admin/payments/reconcile`
+  - Ghi nhận hoàn tiền (`PAY-06`): `POST /api/v1/admin/payments/{paymentId}/refund`
+  - Xem log lỗi Callback (`PAY-07`): `GET /api/v1/admin/payments/callback-logs`
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Refund recorded successfully",
+  "data": {
+    "paymentId": 2,
+    "orderId": 2,
+    "amount": 135000.00,
+    "status": "REFUNDED",
+    "refundReason": "Nhà hàng hết nguyên liệu đột xuất"
+  }
+}
+```
+- **Response JSON Sample (Error - 400 Bad Request):**
+```json
+{
+  "success": false,
+  "code": 400,
+  "message": "Only PAID transactions can be refunded",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Đối chiếu `THANH_TOAN.so_tien === DON_HANG.tong_tien` và lưu vết khi hoàn tiền.
+
+---
+
+### B.4. Quản lý Bàn ăn, Đặt bàn & Báo cáo Thống kê (`Admin\TableController`, `ReservationController`, `ReportController`)
+
+#### 1. Cấu hình Bàn ăn & Điều phối Lượt đặt bàn (`BKG-05` $\rightarrow$ `BKG-12`)
+- **Method & URL:**
+  - Quản lý bàn & sức chứa (`BKG-05`, `BKG-06`): `GET/POST /api/v1/admin/tables`, `PUT /api/v1/admin/tables/{tableId}`
+  - Cấu hình khung giờ (`BKG-07`): `PUT /api/v1/admin/reservations/time-slots`
+  - Danh sách đặt bàn (`BKG-08`): `GET /api/v1/admin/reservations`
+  - Xác nhận / Từ chối / Hủy / Hoàn thành lượt đặt (`BKG-09` $\rightarrow$ `BKG-12`): `PATCH /api/v1/admin/reservations/{reservationId}/status`
+- **Request Body (`PATCH /api/v1/admin/reservations/{reservationId}/status`):**
+```json
+{
+  "targetStatus": "CONFIRMED",
+  "adminNote": "Đã giữ Bàn số 2 cạnh cửa sổ"
+}
+```
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Reservation confirmed successfully",
+  "data": {
+    "reservationId": 3,
+    "status": "CONFIRMED",
+    "tableId": 2,
+    "tableStatus": "RESERVED"
+  }
+}
+```
+- **Response JSON Sample (Error - 409 Conflict):**
+```json
+{
+  "success": false,
+  "code": 409,
+  "message": "Table #2 has an overlapping CONFIRMED reservation at this time",
+  "errors": null
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Đồng bộ tự động trạng thái `BAN_AN.trang_thai` khi Admin duyệt (`CONFIRMED` $\rightarrow$ `RESERVED`) hoặc hoàn tất/hủy (`COMPLETED`/`CANCELLED` $\rightarrow$ `AVAILABLE`).
+
+#### 2. Báo cáo Doanh thu, Đơn hàng, Món bán chạy & Tình hình Đặt bàn (`RPT-01` $\rightarrow$ `RPT-04`)
+- **Method & URL:** `GET /api/v1/admin/reports/dashboard?fromDate=2026-06-01&toDate=2026-06-30`
+- **Response JSON Sample (Success - 200 OK):**
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "Dashboard report generated successfully",
+  "data": {
+    "revenue": {
+      "totalPaidRevenue": 785000.00,
+      "dailySeries": [
+        { "date": "2026-06-01", "amount": 650000.00 },
+        { "date": "2026-06-02", "amount": 135000.00 }
+      ]
+    },
+    "orders": {
+      "totalCount": 3,
+      "completedCount": 1,
+      "cancelledCount": 0,
+      "completionRate": 33.33
+    },
+    "topSellingDishes": [
+      { "dishId": 4, "dishName": "Trà đào cam sả", "totalSold": 3, "revenue": 135000.00 },
+      { "dishId": 1, "dishName": "Súp bào ngư", "totalSold": 2, "revenue": 300000.00 }
+    ],
+    "reservations": {
+      "totalBookings": 3,
+      "confirmedBookings": 2,
+      "occupancyRatePercent": 50.00
+    }
+  }
+}
+```
+- **Response JSON Sample (Error - 422 Unprocessable Entity):**
+```json
+{
+  "success": false,
+  "code": 422,
+  "message": "Invalid date range",
+  "errors": {
+    "toDate": ["The to date must be a date after or equal to from date."]
+  }
+}
+```
+- **Ghi chú nghiệp vụ (Laravel):** Sử dụng Query Builder tổng hợp `DB::table('CHI_TIET_DON_HANG')->join('DON_HANG', ...)->selectRaw('SUM(so_luong) as totalSold, SUM(so_luong * don_gia) as revenue')->groupBy(...)` để đạt hiệu năng cao nhất trên cơ sở dữ liệu.
