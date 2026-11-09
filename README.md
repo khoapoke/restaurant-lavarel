@@ -1,83 +1,104 @@
-# 🍽️ Hệ Thống Quản Lý Nhà Hàng & Đặt Món Trực Tuyến (Pure RESTful API)
+# 🛠️ TÀI LIỆU KỸ THUẬT DỰ ÁN (TECHNICAL DEVELOPER MANUAL)
+# Backend Service: Restaurant Management & Online Food Ordering
 
-> **Backend Service:** Laravel 11 pure RESTful API phục vụ các nền tảng Frontend (React, Next.js, Mobile App, v.v.).  
-> **Kiến trúc:** Service - Controller - FormRequest - API Resource với chuẩn hóa JSON Envelope và Global Exception Shielding.
-
----
-
-## 📌 1. Giới thiệu Tổng quan (Overview)
-
-Dự án này là phân hệ **Backend Pure RESTful API** thuộc Hệ thống Quản lý Nhà hàng & Đặt món ăn. Toàn bộ logic nghiệp vụ được thiết kế tuân thủ theo mô hình L3 chuyên sâu, tách biệt hoàn toàn tầng giao diện (không render Blade views/Web routes).
-
-### Đặc điểm nổi bật:
-- **Chuẩn hóa phản hồi (Unified JSON Envelope):** Mọi response API đều được đóng gói theo khuôn mẫu:
-  - Thành công: `{"success": true, "code": 200, "message": "...", "data": {...}}`
-  - Thất bại: `{"success": false, "code": 4xx/5xx, "message": "...", "errors": {...}}`
-- **Xác thực & Phân quyền (Authentication & RBAC):** 
-  - Sử dụng **Laravel Sanctum** cấp Bearer Token có thời hạn và tự động thu hồi khi đăng xuất hoặc bị Admin khóa tài khoản.
-  - Phân quyền theo 3 vai trò chính: `ADMIN` (Quản trị viên), `STAFF` (Nhân viên), `CUSTOMER` (Khách hàng).
-- **Lá chắn ngoại lệ toàn cục (Global Exception Shielding):**
-  - Tự động ép header `Accept: application/json` thông qua middleware `ForceJsonResponse`.
-  - Triệt tiêu hành vi redirect về web login của Laravel khi không truyền token (trả về HTTP 401 JSON sạch).
-  - Bắt toàn bộ lỗi (Validation 422, Unauthenticated 401, Forbidden 403, ModelNotFound 404, Server Error 500) mà không làm lộ file path hay stack trace nhạy cảm.
-- **Tự động nâng cấp mật khẩu (Auto-Upgrade BCrypt):**
-  - Cho phép tài khoản khởi tạo bằng mật khẩu mẫu (như `'123'`) tự động chuyển đổi thành băm BCrypt an toàn ngay trong lần đăng nhập đầu tiên.
+> **Dành riêng cho Kỹ sư phần mềm, Backend Developers và Người đánh giá kỹ thuật (Technical Reviewers)**  
+> **Kiến trúc:** Pure RESTful API | Modular Monolith | Layered Architecture (Controller - FormRequest - Service L3 - Model - Resource)  
+> **Framework & Runtime:** Laravel 11.x | PHP 8.3 | MySQL 8.0+ | Redis 7.2 (Docker) | Laravel Sanctum
 
 ---
 
-## 🛠️ 2. Công nghệ Sử dụng (Tech Stack)
+## 📌 1. Tổng quan Kiến trúc Kỹ thuật (Architectural Overview)
 
-- **Framework:** Laravel 11.x
-- **Ngôn ngữ:** PHP 8.2+ / PHP 8.3 (hỗ trợ String-Backed Enums, Constructor Promotion, Attributes)
-- **Hệ quản trị CSDL:** MySQL 8.0+ / 8.4+ 
-- **Xác thực:** Laravel Sanctum (Token-based Authentication)
-- **ORM:** Eloquent ORM (tắt `$timestamps = false`, cast mảng JSON `allergens`, `dietaryPreferences`, `savedAddresses`)
+Dự án này là phân hệ **Backend Service thuần RESTful API** phục vụ các Client bên ngoài (ReactJS, NextJS, VueJS hoặc Mobile Apps). Toàn bộ luồng dữ liệu được thiết kế theo hướng không phụ thuộc giao diện (zero Blade views / zero Web sessions).
+
+### Các nguyên tắc thiết kế nòng cốt:
+1. **Kiến trúc Modular Monolith (Module-based):**
+   - Hệ thống được phân rã thành các Module độc lập theo ranh giới nghiệp vụ (Bounded Contexts): `Auth`, `Menu`, `Cart`, `Order`, `Reservation`, `Payment`, `Report`, và `Core/Shared`.
+   - Mỗi module tự đóng gói các thành phần chuyên biệt: `Controllers`, `Services` (tầng nghiệp vụ L3 chuyên sâu), `Models` (Eloquent ORM), `Requests` (xác thực dữ liệu FormRequest), và `Resources` (chuẩn hóa JSON đầu ra).
+2. **Chuẩn hóa phản hồi tuyệt đối (Unified JSON Response Envelopes):**
+   - Thành công: `{"success": true, "code": 200/201, "message": "...", "data": { ... }}`
+   - Thất bại: `{"success": false, "code": 4xx/5xx, "message": "...", "errors": { ... }}`
+   - Xem chi tiết tại: [be_docs/api/README.md](be_docs/api/README.md).
+3. **Lá chắn Ngoại lệ Toàn cục (Global Exception Shielding):**
+   - Middleware `ForceJsonResponse` tự động ép header `Accept: application/json` cho mọi request đến `/api/*`, triệt tiêu triệt để hành vi mặc định redirect về route HTML `login` của Laravel khi thiếu Bearer Token.
+   - Bắt và đóng gói toàn bộ các exception (`ValidationException` 422, `AuthenticationException` 401, `AuthorizationException` 403, `ModelNotFoundException` 404, `HttpException` 409/429, `Throwable` 500) mà không làm lộ file stack trace ra ngoài.
+4. **Hiệu năng cao với Redis In-Memory Caching & Distributed Locks:**
+   - Sử dụng thư viện thuần PHP `predis/predis` (v3.7) kết nối với Redis Server (Docker port 6379), không yêu cầu cài extension C `php_redis.dll`.
+   - Caching menu danh mục (`menu:categories:active`) và gợi ý món theo thời tiết (`weather_rec_*`).
+   - Sử dụng `Cache::lock()` chống tình trạng Race Condition (đặt trùng bàn ăn `BKG-02` hoặc double-click checkout `ORD-01`).
 
 ---
 
-## 📂 3. Cấu trúc Thư mục Nòng cốt
+## 🧰 2. Tech Stack & Infrastructure
+
+| Thành phần | Công nghệ / Thư viện | Vai trò kỹ thuật |
+| :--- | :--- | :--- |
+| **Backend Framework** | Laravel 11.x | Core Framework, Routing, Container DI, Artisan CLI |
+| **Language & Runtime**| PHP 8.3 (ZTS/NTS) | Type hint nghiêm ngặt, Backed Enums, Constructor Promotion, Attributes |
+| **Primary Database** | MySQL 8.0+ / 8.4+ (InnoDB) | Lưu trữ quan hệ 12 bảng chính, hỗ trợ cột JSON mở rộng (`chat_di_ung`, `so_thich_an_uong`, `the_thoi_tiet`) |
+| **In-Memory Cache & Lock** | Redis 7.2 (Alpine - Docker) | Caching dữ liệu đọc tần suất cao và xử lý Khóa phân tán (Distributed Lock) |
+| **Redis Client** | `predis/predis` ^3.7 | Driver PHP thuần kết nối Redis không cần cài đặt DLL |
+| **Authentication** | Laravel Sanctum ^4.3 | Xác thực Stateless Bearer Token, quản lý abilities (`role:admin`, `role:customer`) |
+| **External Integrations**| OpenWeatherMap API & VietQR Napas 247 | Gợi ý thực đơn theo thời tiết & sinh mã VietQR chuyển khoản ngân hàng |
+| **Testing** | PHPUnit 11 / Laravel Test | Bộ test tự động kiểm thử nghiệp vụ, kết nối Redis và API contract |
+
+---
+
+## 📂 3. Cấu trúc Thư mục Hệ thống (Project Structure)
 
 ```text
 restaurant-lavarel/
 ├── app/
-│   ├── Enums/                     # Backed Enums (RoleType, AccountStatus, OrderStatus...)
+│   ├── Enums/                          # String-Backed Enums (RoleType, AccountStatus, OrderStatus, TableStatus...)
 │   ├── Http/
-│   │   ├── Controllers/Api/       # Controllers chuyên biệt thuần API
-│   │   │   ├── AuthController.php # USR-01, USR-02, USR-03 (Login/Register/Logout)
-│   │   │   ├── Admin/             # Phân hệ Quản trị viên (Account, Dish, Order...)
-│   │   │   └── Customer/          # Phân hệ Khách hàng (Profile, Cart, Order...)
-│   │   ├── Middleware/            # ForceJsonResponse, CheckAccountActive, CheckRole
-│   │   ├── Requests/              # FormRequests xác thực dữ liệu đầu vào
-│   │   └── Resources/             # API Resources chuẩn hóa dữ liệu trả về
-│   ├── Models/                    # 12 Eloquent Models ánh xạ 12 bảng CSDL
-│   ├── Services/                  # Tầng xử lý nghiệp vụ (Business Logic L3, Transactions)
+│   │   ├── Controllers/Api/            # RESTful API Controllers
+│   │   │   ├── AuthController.php      # USR-01 -> USR-03 (Register, Login, Logout)
+│   │   │   ├── Customer/               # Endpoints dành cho Khách hàng (Menu, Cart, Order, Reservation, Payment...)
+│   │   │   └── Admin/                  # Endpoints dành cho Quản trị viên (Account, Dish, Order, Table, Report...)
+│   │   ├── Middleware/                 # ForceJsonResponse, CheckAccountActive, CheckRole
+│   │   ├── Requests/                   # FormRequests validate đầu vào (Customer/ & Admin/)
+│   │   └── Resources/                  # API Resources format JSON đầu ra (Customer/ & Admin/)
+│   ├── Models/                         # 12 Eloquent Models (User, Account, Dish, Order, Reservation...)
+│   ├── Services/                       # Tầng xử lý nghiệp vụ L3 chuyên sâu (Transactions, Redis Locks)
+│   │   ├── AuthService.php             # Xử lý đăng nhập, BCrypt auto-upgrade, Sanctum token
+│   │   ├── Customer/                   # Services khách hàng: Menu, Cart, Order, Reservation, Payment, Profile
+│   │   └── Admin/                      # Services admin: Category, Dish, Order, Table, Reservation, Report, Account
 │   └── Traits/
-│       └── ApiResponse.php        # Trait đóng gói JSON Envelope
+│       └── ApiResponse.php             # Trait đóng gói chuẩn hóa Envelope JSON Response
+├── be_docs/                            # HỆ THỐNG TÀI LIỆU KỸ THUẬT (TECHNICAL DOCS)
+│   ├── api/
+│   │   └── README.md                   # Đặc tả chuẩn HTTP Status Codes, Response Envelopes & Error Handling
+│   ├── modules.md                      # Bản đồ Module & Bảng theo dõi tiến độ hoàn thành các Module
+│   ├── business_logic_and_validation_rules.md  # Thuật toán L3, FSM trạng thái và luật nghiệp vụ
+│   ├── glossary_and_laravel_eloquent_mapping.md # Ánh xạ 12 Model Eloquent & Foreign Key Matrix
+│   ├── laravel_restful_api_specifications.md    # Chi tiết toàn bộ 40+ endpoints API
+│   └── memory/
+│       ├── architectural-decisions.md  # Nhật ký hơn 21 quyết định kiến trúc hệ thống (ADR-001 -> ADR-021)
+│       └── lessons-learned.md          # Lưu vết bài học kinh nghiệm và giải pháp fix lỗi môi trường
 ├── database/
-│   ├── migrations/                # Schema 12 bảng + Sanctum personal_access_tokens
+│   ├── migrations/                     # Schema 12 bảng cơ sở dữ liệu + personal_access_tokens
 │   └── seeders/
-│       └── RestaurantSeeder.php   # Dữ liệu giả định đầy đủ (Tài khoản, Món ăn, Bàn...)
-├── docs/                          # TÀI LIỆU ĐẶC TẢ KỸ THUẬT & MEMORY HỆ THỐNG
-│   ├── laravel_restful_api_specifications.md
-│   ├── business_logic_and_validation_rules.md
-│   ├── restaurant_management_system_database_specification.md
-│   └── memory/                    # Nhật ký kiến trúc (ADR) & bài học kinh nghiệm
+│       └── RestaurantSeeder.php        # Bộ dữ liệu mẫu đầy đủ cho toàn bộ hệ thống
+├── OVERVIEW.md                         # Tài liệu mô tả chức năng & giá trị dự án cho Khách hàng/Người dùng
 └── routes/
-    └── api.php                    # Toàn bộ định tuyến API (prefix: /api/v1/)
+    └── api.php                         # Danh bạ toàn bộ route API (prefix: /api/v1/)
 ```
+
+> 🎯 **Lộ trình Refactor Modular:** Toàn bộ các controller, service, request, model sẽ được phân rã theo cấu trúc module độc lập quy định tại [be_docs/modules.md](be_docs/modules.md).
 
 ---
 
-## 🚀 4. Hướng dẫn Cài đặt & Khởi chạy cho Team (Setup Guide)
+## 🚀 4. Hướng dẫn Cài đặt & Khởi chạy (Developer Setup Guide)
 
 ### Bước 1: Yêu cầu môi trường
-Đảm bảo máy của thành viên đã cài đặt:
-- **PHP** >= 8.2 (Khuyến nghị dùng PHP 8.3 trong Laragon hoặc XAMPP).
-- **Composer** (bản 2.x).
-- **MySQL** (chạy trên port 3306).
+- **PHP** >= 8.3 (Khuyến nghị dùng PHP 8.3 trong Laragon trên Windows).
+- **Composer** bản 2.x.
+- **MySQL** 8.0+ (Chạy trên cổng `3306`).
+- **Docker Desktop** (Dùng để chạy container Redis `redis-server` trên cổng `6379`).
 
 > [!TIP]
-> Nếu bạn dùng **Laragon trên Windows**, bạn có thể thêm đường dẫn PHP và Composer vào biến môi trường PATH hoặc chạy trực tiếp từ Terminal của Laragon:
+> **Cấu hình PATH trên Windows (PowerShell):**
+> Nếu lệnh `php` hoặc `composer` chưa nhận diện được trong Terminal, hãy cấu hình biến môi trường PATH:
 > ```powershell
 > $env:PATH = "C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64;C:\laragon\bin\composer;$env:PATH"
 > ```
@@ -85,103 +106,139 @@ restaurant-lavarel/
 ---
 
 ### Bước 2: Clone repository & Cài đặt dependencies
-Mở Terminal và clone source code:
 ```bash
-git clone <URL_REPO_CUA_NHOM>
+git clone <URL_REPO>
 cd restaurant-lavarel
-```
-
-Cài đặt các gói thư viện qua Composer:
-```bash
 composer install
 ```
 
 ---
 
-### Bước 3: Cấu hình file môi trường `.env`
+### Bước 3: Cấu hình biến môi trường `.env`
 Sao chép file `.env.example` thành `.env`:
-```bash
-cp .env.example .env
+```powershell
+copy .env.example .env
 ```
-*(Trên Windows PowerShell nếu không có lệnh `cp`, bạn dùng `copy .env.example .env`)*.
 
-Mở file `.env` và kiểm tra cấu hình kết nối database:
+Kiểm tra và cập nhật các thông số nòng cốt trong file `.env`:
 ```dotenv
+APP_NAME=RestaurantAPI
+APP_ENV=local
+APP_DEBUG=true
+APP_URL=http://localhost:8000
+
+# 1. Cơ sở dữ liệu MySQL
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=restaurant_laravel
 DB_USERNAME=root
 DB_PASSWORD=
+
+# 2. Redis Caching & Distributed Locks
+CACHE_STORE=redis
+REDIS_CLIENT=predis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=null
+
+# 3. Cấu hình VietQR Napas 247
+VIETQR_BANK_BIN=970403
+VIETQR_ACCOUNT_NO=060269723389
+VIETQR_TEMPLATE=compact2
 ```
-*(Tạo database có tên `restaurant_laravel` trên phpMyAdmin/HeidiSQL nếu chưa có)*.
 
----
-
-### Bước 4: Tạo Application Key
-Tạo key mã hóa cho ứng dụng:
+Tạo application key:
 ```bash
 php artisan key:generate
 ```
 
 ---
 
+### Bước 4: Khởi động Redis Container qua Docker
+Kiểm tra và khởi động container Redis đã có sẵn:
+```bash
+docker start <ten_container_redis_cua_ban>
+```
+*(Nếu chưa có container `redis-server`, chạy lệnh tạo mới sau:)*
+```bash
+docker run -d --name redis-server -p 6379:6379 --restart unless-stopped redis:7.2-alpine
+```
+
+Kiểm tra kết nối Redis:
+```bash
+docker exec redis-server redis-cli ping
+# Kết quả phản hồi: PONG
+```
+
+---
+
 ### Bước 5: Chạy Migration & Seeder dữ liệu mẫu
-Khởi tạo cấu trúc 12 bảng và nạp sẵn dữ liệu kiểm thử (Tài khoản, Danh mục, Món ăn, Bàn ăn, Đơn hàng, Đặt bàn):
+Tạo sạch 12 bảng và nạp đầy đủ dữ liệu kiểm thử (Tài khoản, Danh mục, Món ăn, Bàn ăn, Đơn hàng, Lượt đặt bàn):
 ```bash
 php artisan migrate:fresh --seed
 ```
 
 ---
 
-### Bước 6: Khởi chạy Development Server
-Khởi động API server nội bộ:
+### Bước 6: Khởi chạy API Development Server
 ```bash
 php artisan serve
 ```
-Mặc định ứng dụng sẽ chạy tại địa chỉ: `http://127.0.0.1:8000`
+Server sẽ chạy tại địa chỉ: `http://127.0.0.1:8000` (Prefix API: `http://127.0.0.1:8000/api/v1/`).
 
 ---
 
-## 👥 5. Danh Sách Tài Khoản Mẫu Để Kiểm Thử (Seed Accounts)
+## 🔑 5. Danh Sách Tài Khoản Kiểm Thử Mặc Định (Seed Credentials)
 
-Hệ thống đã chuẩn bị sẵn các tài khoản với mọi vai trò phục vụ kiểm thử:
-
-| STT | Username | Password | Vai trò | Email | Trạng thái | Mục đích kiểm thử |
-|:---:|:---|:---:|:---|:---|:---:|:---|
-| 1 | `admin` | `Password@123` | **Quản trị viên** (Admin) | `admin@restaurant.com` | `ACTIVE` | Test API Quản trị (`/api/v1/admin/*`) |
-| 2 | `staff1` | `Password@123` | **Nhân viên** (Staff) | `staff1@restaurant.com` | `ACTIVE` | Test API Bếp/Thu ngân/Đặt bàn |
-| 3 | `kh1` | `123` | **Khách hàng** (Customer) | `khachhang1@gmail.com` | `ACTIVE` | Test Hồ sơ, Giỏ hàng, Đặt món (tự nâng cấp BCrypt) |
-| 4 | `kh2` | `Password@123` | **Khách hàng** (Customer) | `khachhang2@gmail.com` | `ACTIVE` | Test Khách hàng 2 |
-| 5 | `kh_locked`| `Password@123` | **Khách hàng** (Customer) | `locked@gmail.com` | `LOCKED` | Test chặn đăng nhập tài khoản bị khóa (403) |
-
-> [!NOTE]
-> - Tài khoản `admin`, `staff1`, `kh2`, `kh_locked` mặc định dùng mật khẩu băm BCrypt chuẩn: **`Password@123`**.
-> - Riêng tài khoản `kh1` dùng mật khẩu mẫu đơn giản là **`123`** để kiểm thử tính năng tự động phát hiện và băm sang **BCrypt** an toàn ngay trong lần đăng nhập đầu tiên.
+| STT | Username | Mật khẩu | Vai trò (`Role`) | Email | Trạng thái | Mục đích kiểm thử API |
+| :---: | :--- | :---: | :--- | :--- | :---: | :--- |
+| **1** | `admin` | `Password@123` | `ADMIN` | `admin@restaurant.com` | `ACTIVE` | Toàn quyền kiểm thử các API Quản trị (`/api/v1/admin/*`) |
+| **2** | `staff1` | `Password@123` | `STAFF` | `staff1@restaurant.com` | `ACTIVE` | Kiểm thử nghiệp vụ Bếp, Phục vụ, Xếp bàn, Thu ngân |
+| **3** | `kh1` | `123` | `CUSTOMER` | `khachhang1@gmail.com` | `ACTIVE` | Kiểm thử cơ chế **Auto-Upgrade BCrypt** trong lần login đầu tiên |
+| **4** | `kh2` | `Password@123` | `CUSTOMER` | `khachhang2@gmail.com` | `ACTIVE` | Kiểm thử Khách hàng đặt món, giỏ hàng, đặt bàn |
+| **5** | `kh_locked` | `Password@123` | `CUSTOMER` | `locked@gmail.com` | `LOCKED` | Kiểm thử middleware `account.active` chặn 403 Forbidden |
 
 ---
 
-## 📑 6. Danh Mục Tài Liệu Tham Khảo Trong Dự Án
+## ⚡ 6. Cơ Chế Kỹ Thuật Chuyên Sâu (Deep Technical Implementations)
 
-Mọi thành viên trong team khi phát triển chức năng mới **bắt buộc** đọc và tuân thủ các tài liệu đặc tả đặt trong thư mục `docs/`:
+### 1. Redis Distributed Lock chống Race Condition
+- **Đặt bàn ăn (`ReservationService::createReservation`):**  
+  Bảo vệ tài nguyên bàn ăn bằng `Cache::lock("lock:reservation:table:{$tableId}", 5)`. Khóa tuần tự hóa trong 3 giây. Nếu có 2 request đặt cùng một bàn vào cùng khung giờ $\pm 119$ phút, request đến sau sẽ bị chặn lại hoặc nhận lỗi `409 Conflict`.
+- **Tạo đơn hàng (`OrderService::checkout`):**  
+  Bảo vệ phiên giỏ hàng bằng `Cache::lock("lock:order:checkout:{$accountId}", 10)`. Ngăn chặn hoàn toàn hiện tượng người dùng double-click nút thanh toán trên Web/App tạo ra 2 đơn hàng trùng lặp.
 
-1. **[Tài liệu Đặc tả RESTful API](docs/laravel_restful_api_specifications.md):**
-   - Danh sách chi tiết các API (Method, URL, Header, Request Body, Response JSON Envelope thành công/lỗi).
-2. **[Quy tắc Nghiệp vụ & Ràng buộc Dữ liệu](docs/business_logic_and_validation_rules.md):**
-   - Các thuật toán trọng tâm L3 (Giỏ hàng không dùng cột ID tự tăng, chuyển trạng thái đơn hàng FSM, tính tiền & khuyến mãi, quy tắc khóa tài khoản `AUTH-LOCK`...).
-3. **[Đặc tả Cơ sở Dữ liệu](docs/restaurant_management_system_database_specification.md):**
-   - Chi tiết 12 bảng, cấu trúc khóa chính phức hợp, quan hệ Foreign Key, kiểu dữ liệu JSON mở rộng.
-4. **[Nhật ký Quyết định Kiến trúc (ADR)](docs/memory/architectural-decisions.md):**
-   - Lưu trữ các quyết định kỹ thuật từ `ADR-001` đến `ADR-008` (Cấu trúc API, Middleware, Error Handling, Logic Khách hàng, Quản lý Admin...).
-5. **[Bài học Kinh nghiệm & Khắc phục Lỗi](docs/memory/lessons-learned.md):**
-   - Các lưu ý tránh lỗi khi code Laravel Eloquent trên bảng không có timestamps, xử lý token invalidation, v.v.
+### 2. Tự động nâng cấp mật khẩu (Auto-Upgrade BCrypt)
+- Khi gọi `POST /api/v1/auth/login`:
+  - Nếu mật khẩu trong DB đã ở định dạng hash BCrypt (`$2y$`, `$2a$`, `$2b$`) $\rightarrow$ Dùng `Hash::check()`.
+  - Nếu mật khẩu trong DB là chuỗi plaintext cũ (như `'123'`) $\rightarrow$ Sử dụng `hash_equals()` kiểm tra, nếu trùng khớp hệ thống lập tức băm `Hash::make()` và cập nhật đè xuống MySQL ngay tại thời điểm đăng nhập thành công.
+
+### 3. Quy tắc toàn vẹn dữ liệu & Xóa mềm (Soft Delete Policy)
+- Bảng `MON_AN` tuyệt đối **không được xóa vật lý** (`DELETE FROM MON_AN`) để tránh vi phạm khóa ngoại trong `CHI_TIET_DON_HANG`.
+- Luôn sử dụng cờ `da_xoa = true` và `hien_thi = false`. Khi xóa mềm một danh mục, hệ thống tự động ẩn toàn bộ món ăn thuộc danh mục đó.
 
 ---
 
-## ⚠️ 7. Quy Tắc Bắt Buộc Dành Cho Thành Viên Khi Code (Team Guidelines)
+## 🧪 7. Kiểm Thử Tự Động (Automated Testing)
 
-1. **Pure RESTful API:** Tuyệt đối không can thiệp hay viết logic vào `resources/views`, `resources/css`, `resources/js`, `vite.config.js` hay `routes/web.php`.
-2. **Tuân thủ Chuẩn Envelope:** Toàn bộ Controller API phải sử dụng `ApiResponse` Trait (`$this->successResponse(...)`, `$this->errorResponse(...)`).
-3. **Xóa mềm (Soft Delete):** Tuyệt đối **không gọi lệnh `$dish->delete()` vật lý** trên bảng món ăn `MON_AN` vì sẽ vi phạm ràng buộc khóa ngoại với chi tiết đơn hàng cũ. Luôn cập nhật cờ xóa mềm (`isDeleted = true`, `isVisible = false`).
-4. **Bảo mật:** Model `Account` luôn bật thuộc tính `protected $hidden = ['mat_khau'];` để tránh rò rỉ mật khẩu trong JSON.
-5. **Quy tắc Khóa tài khoản (Rule AUTH-LOCK):** Admin không được tự khóa chính mình. Khi khóa một tài khoản, phải gọi `$account->tokens()->delete()` để thu hồi toàn bộ token phiên làm việc tức thì.
+Chạy bộ test suite của toàn bộ hệ thống:
+```bash
+php artisan test
+```
+
+Kiểm tra cấu hình và kết nối Redis từ Laravel:
+```bash
+php artisan tinker --execute="echo Illuminate\Support\Facades\Redis::ping() ? 'Redis OK' : 'Redis Fail';"
+```
+
+---
+
+## 📚 8. Bản Đồ Tài Liệu Kỹ Thuật Chi Tiết (Technical Documentation Map)
+
+1. **[Đặc tả Mã Lỗi & Response Envelopes](be_docs/api/README.md):** Cấu trúc JSON chuẩn, HTTP status codes, mã lỗi nghiệp vụ, hướng dẫn header từ Client.
+2. **[Bản Đồ Module & Tiến Độ Dự Án](be_docs/modules.md):** Danh mục các module, phân rã danh sách API, trạng thái đã làm xong / đang làm / chưa làm.
+3. **[Thuật Toán L3 & Quy Tắc Nghiệp Vụ](be_docs/business_logic_and_validation_rules.md):** Thuật toán tính tiền, FSM trạng thái đơn hàng, FSM đặt bàn, xử lý giỏ hàng không dùng ID tự tăng.
+4. **[Đặc Tả Cơ Sở Dữ Liệu & Eloquent Mapping](be_docs/glossary_and_laravel_eloquent_mapping.md):** 12 Models Eloquent, bảng quan hệ nhiều - nhiều, Backed Enums, cách xử lý 6 bẫy lỗi mapping DB.
+5. **[Nhật Ký Quyết Định Kiến Trúc (ADRs)](be_docs/memory/architectural-decisions.md):** Toàn bộ lịch sử quyết định kiến trúc từ ADR-001 đến ADR-021.
+6. **[Bài Học Kinh Nghiệm (Lessons Learned)](be_docs/memory/lessons-learned.md):** Sổ tay xử lý sự cố môi trường và cạm bẫy kỹ thuật.
