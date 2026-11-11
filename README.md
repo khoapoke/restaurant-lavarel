@@ -49,31 +49,27 @@ Dự án này là phân hệ **Backend Service thuần RESTful API** phục vụ
 ```text
 restaurant-lavarel/
 ├── app/
-│   ├── Enums/                          # String-Backed Enums (RoleType, AccountStatus, OrderStatus, TableStatus...)
 │   ├── Http/
-│   │   ├── Controllers/Api/            # RESTful API Controllers
-│   │   │   ├── AuthController.php      # USR-01 -> USR-03 (Register, Login, Logout)
-│   │   │   ├── Customer/               # Endpoints dành cho Khách hàng (Menu, Cart, Order, Reservation, Payment...)
-│   │   │   └── Admin/                  # Endpoints dành cho Quản trị viên (Account, Dish, Order, Table, Report...)
-│   │   ├── Middleware/                 # ForceJsonResponse, CheckAccountActive, CheckRole
-│   │   ├── Requests/                   # FormRequests validate đầu vào (Customer/ & Admin/)
-│   │   └── Resources/                  # API Resources format JSON đầu ra (Customer/ & Admin/)
-│   ├── Models/                         # 12 Eloquent Models (User, Account, Dish, Order, Reservation...)
-│   ├── Services/                       # Tầng xử lý nghiệp vụ L3 chuyên sâu (Transactions, Redis Locks)
-│   │   ├── AuthService.php             # Xử lý đăng nhập, BCrypt auto-upgrade, Sanctum token
-│   │   ├── Customer/                   # Services khách hàng: Menu, Cart, Order, Reservation, Payment, Profile
-│   │   └── Admin/                      # Services admin: Category, Dish, Order, Table, Reservation, Report, Account
-│   └── Traits/
-│       └── ApiResponse.php             # Trait đóng gói chuẩn hóa Envelope JSON Response
+│   │   └── Controllers/Controller.php  # Base Controller gốc của Laravel
+│   ├── Modules/                        # KIẾN TRÚC MODULAR MONOLITH (PURE MODULES)
+│   │   ├── Core/                       # BaseController, ApiResponse, 7 Backed Enums, Middlewares
+│   │   ├── Auth/                       # Account, UserProfile, Role, Controllers, Services, Requests, Resources
+│   │   ├── Menu/                       # Category, Dish, Controllers, Services (Redis Cache), Requests, Resources
+│   │   ├── Cart/                       # Cart, CartItem, Controllers, Services, Requests, Resources
+│   │   ├── Order/                      # Order, OrderItem, Controllers, Services (Redis Lock), Requests, Resources
+│   │   ├── Reservation/                # DiningTable, Reservation, Controllers, Services (Redis Lock)
+│   │   ├── Payment/                    # Payment, VietQR, Controllers, Services, Requests, Resources
+│   │   └── Report/                     # Dashboard & Analytics, Controllers, Services, Requests
+│   └── Providers/
+│       └── AppServiceProvider.php      # ServiceProvider cấu hình hệ thống & MorphMap
 ├── be_docs/                            # HỆ THỐNG TÀI LIỆU KỸ THUẬT (TECHNICAL DOCS)
-│   ├── api/
-│   │   └── README.md                   # Đặc tả chuẩn HTTP Status Codes, Response Envelopes & Error Handling
+│   ├── api/                            # Đặc tả API cho từng module (auth, menu, cart, order, reservation...)
 │   ├── modules.md                      # Bản đồ Module & Bảng theo dõi tiến độ hoàn thành các Module
 │   ├── business_logic_and_validation_rules.md  # Thuật toán L3, FSM trạng thái và luật nghiệp vụ
 │   ├── glossary_and_laravel_eloquent_mapping.md # Ánh xạ 12 Model Eloquent & Foreign Key Matrix
-│   ├── laravel_restful_api_specifications.md    # Chi tiết toàn bộ 40+ endpoints API
+│   ├── laravel_restful_api_specifications.md    # Mục lục điều hướng API tổng thể
 │   └── memory/
-│       ├── architectural-decisions.md  # Nhật ký hơn 21 quyết định kiến trúc hệ thống (ADR-001 -> ADR-021)
+│       ├── architectural-decisions.md  # Nhật ký 23 quyết định kiến trúc hệ thống (ADR-001 -> ADR-023)
 │       └── lessons-learned.md          # Lưu vết bài học kinh nghiệm và giải pháp fix lỗi môi trường
 ├── database/
 │   ├── migrations/                     # Schema 12 bảng cơ sở dữ liệu + personal_access_tokens
@@ -81,10 +77,10 @@ restaurant-lavarel/
 │       └── RestaurantSeeder.php        # Bộ dữ liệu mẫu đầy đủ cho toàn bộ hệ thống
 ├── OVERVIEW.md                         # Tài liệu mô tả chức năng & giá trị dự án cho Khách hàng/Người dùng
 └── routes/
-    └── api.php                         # Danh bạ toàn bộ route API (prefix: /api/v1/)
+    └── api.php                         # Aggregator nạp toàn bộ Route từ app/Modules/*/Routes/api.php
 ```
 
-> 🎯 **Lộ trình Refactor Modular:** Toàn bộ các controller, service, request, model sẽ được phân rã theo cấu trúc module độc lập quy định tại [be_docs/modules.md](be_docs/modules.md).
+> 🎯 **Kiến trúc Pure Modular:** Toàn bộ hệ thống hoạt động 100% thuần theo Module, không còn phụ thuộc vào các thư mục hay class tương thích ngược cũ. Xem chi tiết tại [TESTING_GUIDE.md](TESTING_GUIDE.md) để kiểm thử trực tiếp trên giao diện.
 
 ---
 
