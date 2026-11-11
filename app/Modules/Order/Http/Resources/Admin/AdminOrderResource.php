@@ -4,6 +4,7 @@ namespace App\Modules\Order\Http\Resources\Admin;
 
 use App\Modules\Core\Enums\OrderStatus;
 use App\Modules\Order\Http\Resources\Customer\OrderItemResource;
+use App\Modules\Payment\Http\Resources\Admin\AdminPaymentResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
