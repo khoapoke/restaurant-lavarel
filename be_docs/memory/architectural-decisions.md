@@ -295,6 +295,41 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - `ReservationService::createReservation()` (`BKG-02`): Sử dụng `Cache::lock("lock:reservation:table:{$tableId}", 5)` với `block(3)` để tuần tự hóa các yêu cầu đặt cùng một bàn ăn, ngăn chặn triệt để tình trạng hai khách hàng đặt trùng cùng một bàn trong khung giờ $\pm 119$ phút. Trả về `HTTP 409 Conflict` nếu quá thời gian chờ khóa.
     - `OrderService::checkout()` (`ORD-01`): Sử dụng `Cache::lock("lock:order:checkout:{$accountId}", 10)` với `block(5)` để chặn các thao tác double-click submit đơn hàng từ frontend, bảo vệ giỏ hàng và dữ liệu thanh toán.
 
+## ADR-022: Tái Cấu Trúc Hệ Thống Theo Kiến Trúc Modular Monolith (Module-based Architecture)
+- **Ngày quyết định:** 2026-11-10
+- **Bối cảnh:**
+  - Sau khi hoàn thành toàn bộ 59 API endpoints của hệ thống và tích hợp Redis, toàn bộ codebase đang nằm phân tán theo tầng kỹ thuật truyền thống (`app/Http/Controllers/Api/`, `app/Services/`, `app/Models/`, `app/Http/Requests/`).
+  - Khi quy mô dự án tăng lên, việc gom tất cả controller hay model vào một thư mục chung làm tăng độ phức tạp trong việc quản lý mã nguồn và ranh giới nghiệp vụ (Coupling).
+  - Cần tái cấu trúc sang mô hình **Modular Monolith** phân rã theo Domain/Module mà vẫn đảm bảo 100% giữ nguyên API Contract cho Client.
+- **Quyết định:**
+  - **Phân rã thành 7 Module Nghiệp vụ + 1 Core Module:**
+    1. `Auth`: Xác thực, Tài khoản, Hồ sơ người dùng, Phân quyền RBAC.
+    2. `Menu`: Danh mục, Món ăn, Gợi ý thời tiết (Redis Cache).
+    3. `Cart`: Giỏ hàng mua sắm khách hàng.
+    4. `Order`: Đơn hàng, Trạng thái FSM, Chi tiết đơn (Redis Lock).
+    5. `Reservation`: Bàn ăn, Đặt bàn, Xử lý xung đột lịch hẹn (Redis Lock).
+    6. `Payment`: Giao dịch thanh toán, VietQR Napas 247, Webhook.
+    7. `Report`: Báo cáo doanh thu, đơn hàng, món bán chạy, dashboard.
+    8. `Core` / `Shared`: `ApiResponse` Trait, Backed Enums, Middlewares, Exceptions, Migrations.
+  - **Tổ chức tài liệu đặc tả & theo dõi:**
+    - Khởi tạo `OVERVIEW.md` dành cho người dùng và khách hàng đọc hiểu giá trị dự án.
+    - Cập nhật `README.md` chuyên biệt dành cho kỹ sư phần mềm / reviewer kỹ thuật.
+    - Tạo `be_docs/api/README.md` chuẩn hóa giao thức phản hồi (Envelopes), mã lỗi HTTP và cơ chế che chắn ngoại lệ.
+    - Tạo `be_docs/modules.md` đóng vai trò là bản đồ kiến trúc module và bảng theo dõi tiến độ hoàn thành các module.
+
+## ADR-023: Chuyển Đổi Sang Pure Modular Monolith (Loại Bỏ Hoàn Toàn Lớp Tương Thích Ngược)
+- **Ngày quyết định:** 2026-11-11
+- **Bối cảnh:**
+  - Sau khi di chuyển mã nguồn sang `app/Modules/`, hệ thống vẫn còn duy trì các lớp và file tương thích ngược cũ tại `app/Models/`, `app/Services/`, `app/Http/Controllers/Api/`, `app/Http/Requests/`, `app/Http/Resources/`, `app/Http/Middleware/`, `app/Enums/`, `app/Traits/`.
+  - Việc duy trì hai tầng code song song gây nhiễu mã nguồn, giảm tính rành mạch của kiến trúc Module Monolith và làm dư thừa tài nguyên bảo trì.
+- **Quyết định:**
+  - **Xóa bỏ triệt để toàn bộ thư mục và file legacy:** Xóa sạch `app/Models`, `app/Services`, `app/Http/Controllers/Api`, `app/Http/Requests`, `app/Http/Resources`, `app/Http/Middleware`, `app/Enums`, `app/Traits`.
+  - **100% Pure Modular Directory:** Toàn bộ thực thể chỉ sống độc quyền tại `app/Modules/{ModuleName}/`.
+  - **Đồng bộ Database Seeders:** Cập nhật `RestaurantSeeder` và `DatabaseSeeder` trực tiếp gọi các Model và Enum thuộc `App\Modules\...`.
+  - **Đồng bộ Config Auth:** `config/auth.php` cấu hình provider model trỏ thẳng sang `\App\Modules\Auth\Models\Account::class`.
+  - **Kiểm thử tự động:** Xác nhận 100% test cases (bao gồm Seeder và API flow) đều vượt qua kiểm tra với `composer dump-autoload` được làm mới hoàn toàn.
+
+
 
 
 

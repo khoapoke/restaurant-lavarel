@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Middleware\CheckAccountActive;
-use App\Http\Middleware\CheckRole;
-use App\Http\Middleware\ForceJsonResponse;
+use App\Modules\Core\Http\Middleware\CheckAccountActive;
+use App\Modules\Core\Http\Middleware\CheckRole;
+use App\Modules\Core\Http\Middleware\ForceJsonResponse;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;

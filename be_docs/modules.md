@@ -15,7 +15,7 @@
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
 | **1** | **API Logic & Nghiệp vụ (Endpoints)** | **59** | **0** | **0** | **59** | **100%** |
 | **2** | **Module Nghiệp vụ (Modules)** | **8** | **0** | **0** | **8** | **100%** |
-| **3** | **Lộ trình Refactor Cấu trúc Folder** | **2** | **1** | **5** | **8** | **25%** |
+| **3** | **Lộ trình Refactor Kiến Trúc Module** | **8** | **0** | **0** | **8** | **100%** |
 
 ---
 
@@ -23,14 +23,14 @@
 
 | STT | Tên Module | Phạm vi nghiệp vụ | Số lượng API | Trạng thái Logic | Trạng thái Refactor Folder | Ghi chú kỹ thuật nổi bật |
 | :---: | :--- | :--- | :---: | :---: | :---: | :--- |
-| **1** | **`Auth`** | Tài khoản, Hồ sơ, Phân quyền | 11 APIs | `X` | `O` | Auto-Upgrade BCrypt, Sanctum Token, RBAC |
-| **2** | **`Menu`** | Danh mục, Món ăn, Gợi ý | 14 APIs | `X` | ` ` | In-Memory Redis Cache, OpenWeatherMap API |
-| **3** | **`Cart`** | Giỏ hàng khách hàng | 5 APIs | `X` | ` ` | Bảng liên kết không dùng ID tự tăng |
-| **4** | **`Order`** | Đặt hàng, Xử lý trạng thái FSM | 7 APIs | `X` | ` ` | Redis Distributed Lock, Snapshot đơn giá |
-| **5** | **`Reservation`** | Quản lý bàn & Đặt bàn | 11 APIs | `X` | ` ` | Redis Distributed Lock, Kiểm tra trùng giờ $\pm 119'$ |
-| **6** | **`Payment`** | Thanh toán, VietQR, Webhook | 6 APIs | `X` | ` ` | VietQR Napas 247, Webhook đối soát |
-| **7** | **`Report`** | Báo cáo & Dashboard Admin | 5 APIs | `X` | ` ` | Tổng hợp Aggregates SQL hiệu năng cao |
-| **8** | **`Core` / `Shared`** | Enums, Middlewares, Exceptions | Hệ thống | `X` | `O` | Unified JSON Envelope, Exception Shielding |
+| **1** | **`Auth`** | Tài khoản, Hồ sơ, Phân quyền | 11 APIs | `X` | `X` | Auto-Upgrade BCrypt, Sanctum Token, RBAC |
+| **2** | **`Menu`** | Danh mục, Món ăn, Gợi ý | 14 APIs | `X` | `X` | In-Memory Redis Cache, OpenWeatherMap API |
+| **3** | **`Cart`** | Giỏ hàng khách hàng | 5 APIs | `X` | `X` | Bảng liên kết Pivot nhiều-nhiều |
+| **4** | **`Order`** | Đặt hàng, Xử lý trạng thái FSM | 7 APIs | `X` | `X` | Redis Distributed Lock, Snapshot đơn giá |
+| **5** | **`Reservation`** | Quản lý bàn & Đặt bàn | 11 APIs | `X` | `X` | Redis Distributed Lock, Kiểm tra trùng giờ $\pm 119'$ |
+| **6** | **`Payment`** | Thanh toán, VietQR, Webhook | 6 APIs | `X` | `X` | VietQR Napas 247, Webhook đối soát |
+| **7** | **`Report`** | Báo cáo & Dashboard Admin | 5 APIs | `X` | `X` | Tổng hợp Aggregates SQL hiệu năng cao |
+| **8** | **`Core` / `Shared`** | Enums, Middlewares, Exceptions | Hệ thống | `X` | `X` | Unified JSON Envelope, Exception Shielding |
 
 *Tổng số API Endpoint đã hoàn thành và kiểm thử:* **59 APIs**
 
@@ -41,13 +41,15 @@
 ---
 
 ### 🛡️ MODULE 1: AUTH (Xác Thực, Tài Khoản & Phân Quyền)
-- **Namespace dự kiến:** `App\Modules\Auth\`
+- **Vị trí thư mục:** `app/Modules/Auth/`
 - **Trách nhiệm:** Quản lý vòng đời tài khoản, hồ sơ cá nhân khách hàng/nhân viên, cấp và thu hồi token Sanctum, phân quyền theo vai trò (`ADMIN`, `STAFF`, `CUSTOMER`).
 - **Thành phần kỹ thuật:**
   - **Models:** `Account` (`TAI_KHOAN`), `UserProfile` (`NGUOI_DUNG`), `Role` (`VAI_TRO`).
-  - **Services:** `AuthService`, `ProfileService`, `Admin\AccountService`.
+  - **Services:** `AuthService`, `Customer\ProfileService`, `Admin\AccountService`.
   - **Controllers:** `AuthController`, `Customer\ProfileController`, `Admin\AccountController`.
-  - **Middlewares:** `CheckAccountActive`, `CheckRole`.
+  - **Requests:** `RegisterRequest`, `LoginRequest`, `Customer\UpdateProfileRequest`.
+  - **Resources:** `AccountResource`, `UserProfileResource`, `Customer\CustomerProfileResource`, `Admin\AdminAccountResource`.
+  - **Routes:** `app/Modules/Auth/Routes/api.php`.
 - **Danh sách API Endpoints:**
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
@@ -67,12 +69,15 @@
 ---
 
 ### 🥗 MODULE 2: MENU (Thực Đơn, Danh Mục & Món Ăn)
-- **Namespace dự kiến:** `App\Modules\Menu\`
+- **Vị trí thư mục:** `app/Modules/Menu/`
 - **Trách nhiệm:** Quản lý danh mục món ăn, chi tiết món, bộ lọc theo giá/dị ứng, gợi ý món ăn thông minh theo thời tiết và kiểm soát hiển thị/xóa mềm.
 - **Thành phần kỹ thuật:**
   - **Models:** `Category` (`DANH_MUC`), `Dish` (`MON_AN`).
   - **Services:** `Customer\MenuService`, `Admin\CategoryService`, `Admin\DishService`.
   - **Controllers:** `Customer\MenuController`, `Admin\CategoryController`, `Admin\DishController`.
+  - **Requests:** `Customer\WeatherRecommendationRequest`, `Admin\CreateCategoryRequest`, `Admin\UpdateCategoryRequest`, `Admin\ToggleCategoryVisibilityRequest`, `Admin\CreateDishRequest`, `Admin\UpdateDishRequest`, `Admin\ToggleDishAvailabilityRequest`, `Admin\ToggleDishVisibilityRequest`.
+  - **Resources:** `Customer\CategoryResource`, `Customer\DishResource`, `Customer\DishDetailResource`, `Admin\AdminCategoryResource`, `Admin\AdminDishResource`.
+  - **Routes:** `app/Modules/Menu/Routes/api.php`.
   - **Đặc biệt:** Tích hợp **Redis Caching** (`menu:categories:active` thời gian 3600s, `weather_rec_*` 900s) và Cache Busting tự động khi Admin sửa dữ liệu.
 - **Danh sách API Endpoints:**
 
@@ -96,12 +101,15 @@
 ---
 
 ### 🛒 MODULE 3: CART (Giỏ Hàng Mua Sắm)
-- **Namespace dự kiến:** `App\Modules\Cart\`
+- **Vị trí thư mục:** `app/Modules/Cart/`
 - **Trách nhiệm:** Quản lý giỏ hàng mua sắm 1-1 với tài khoản khách hàng, thêm/sửa/xóa món ăn trong giỏ.
 - **Thành phần kỹ thuật:**
-  - **Models:** `Cart` (`GIO_HANG`), `CartDish` (`MON_AN_GIO_HANG` - bảng pivot quan hệ nhiều-nhiều).
+  - **Models:** `Cart` (`GIO_HANG`), `CartItem` (`MON_AN_GIO_HANG` - bảng pivot quan hệ nhiều-nhiều).
   - **Services:** `Customer\CartService`.
   - **Controllers:** `Customer\CartController`.
+  - **Requests:** `Customer\AddCartItemRequest`, `Customer\UpdateCartItemRequest`.
+  - **Resources:** `Customer\CartResource`, `Customer\CartItemResource`.
+  - **Routes:** `app/Modules/Cart/Routes/api.php`.
 - **Danh sách API Endpoints:**
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
@@ -115,12 +123,15 @@
 ---
 
 ### 📦 MODULE 4: ORDER (Đơn Hàng & Vận Hành Bếp)
-- **Namespace dự kiến:** `App\Modules\Order\`
+- **Vị trí thư mục:** `app/Modules/Order/`
 - **Trách nhiệm:** Chuyển đổi giỏ hàng thành đơn hàng chính thức (Checkout), lưu vết snapshot đơn giá, quản lý vòng đời trạng thái đơn hàng (FSM: Chờ xác nhận $\rightarrow$ Đang nấu $\rightarrow$ Đang giao $\rightarrow$ Hoàn tất / Đã hủy).
 - **Thành phần kỹ thuật:**
-  - **Models:** `Order` (`DON_HANG`), `OrderDetail` (`CHI_TIET_DON_HANG`).
+  - **Models:** `Order` (`DON_HANG`), `OrderItem` (`CHI_TIET_DON_HANG`).
   - **Services:** `Customer\OrderService`, `Admin\OrderService`.
   - **Controllers:** `Customer\OrderController`, `Admin\OrderController`.
+  - **Requests:** `Customer\CheckoutOrderRequest`, `Customer\CancelOrderRequest`, `Admin\AdminCancelOrderRequest`, `Admin\UpdateOrderStatusRequest`.
+  - **Resources:** `Customer\OrderResource`, `Customer\OrderItemResource`, `Customer\OrderPaymentResource`, `Admin\AdminOrderResource`.
+  - **Routes:** `app/Modules/Order/Routes/api.php`.
   - **Đặc biệt:** Sử dụng **Redis Distributed Lock** `lock:order:checkout:{accountId}` trong 10 giây chống double-click checkout.
 - **Danh sách API Endpoints:**
 
@@ -137,12 +148,15 @@
 ---
 
 ### 🪑 MODULE 5: RESERVATION (Bàn Ăn & Đặt Bàn Trước)
-- **Namespace dự kiến:** `App\Modules\Reservation\`
+- **Vị trí thư mục:** `app/Modules/Reservation/`
 - **Trách nhiệm:** Quản lý danh mục bàn ăn, tìm bàn trống theo sức chứa và thời gian, tạo lượt đặt bàn, xử lý xung đột khung giờ $\pm 119$ phút, đồng bộ trạng thái bàn ăn (`TRONG`, `DA_DAT`, `DANG_SU_DUNG`, `BAO_TRI`).
 - **Thành phần kỹ thuật:**
   - **Models:** `DiningTable` (`BAN_AN`), `Reservation` (`DAT_BAN`).
   - **Services:** `Customer\ReservationService`, `Admin\TableService`, `Admin\ReservationService`.
   - **Controllers:** `Customer\ReservationController`, `Admin\TableController`, `Admin\ReservationController`.
+  - **Requests:** `Customer\FindAvailableTablesRequest`, `Customer\CreateReservationRequest`, `Customer\UpdateReservationRequest`, `Admin\CreateTableRequest`, `Admin\UpdateTableRequest`, `Admin\UpdateTimeSlotsRequest`, `Admin\UpdateReservationStatusRequest`.
+  - **Resources:** `Customer\TableResource`, `Customer\ReservationResource`, `Admin\AdminTableResource`, `Admin\AdminReservationResource`.
+  - **Routes:** `app/Modules/Reservation/Routes/api.php`.
   - **Đặc biệt:** Tích hợp **Redis Distributed Lock** `lock:reservation:table:{tableId}` trong 5 giây chống đặt trùng bàn cùng một thời điểm.
 - **Danh sách API Endpoints:**
 
@@ -163,12 +177,15 @@
 ---
 
 ### 💳 MODULE 6: PAYMENT (Thanh Toán & Đối Soát Giao Dịch)
-- **Namespace dự kiến:** `App\Modules\Payment\`
+- **Vị trí thư mục:** `app/Modules/Payment/`
 - **Trách nhiệm:** Khởi tạo giao dịch thanh toán quan hệ 1-1 với đơn hàng, sinh mã thanh toán VietQR động chuẩn Napas 247, kiểm tra trạng thái thanh toán và webhook cập nhật tự động.
 - **Thành phần kỹ thuật:**
   - **Models:** `Payment` (`THANH_TOAN`).
   - **Services:** `Customer\PaymentService`, `Admin\PaymentService`.
   - **Controllers:** `Customer\PaymentController`, `Admin\PaymentController`.
+  - **Requests:** `Admin\ReconcilePaymentRequest`, `Admin\RefundPaymentRequest`.
+  - **Resources:** `Admin\AdminPaymentResource`, `Admin\CallbackLogResource`.
+  - **Routes:** `app/Modules/Payment/Routes/api.php`.
 - **Danh sách API Endpoints:**
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
@@ -183,11 +200,13 @@
 ---
 
 ### 📈 MODULE 7: REPORT (Báo Cáo Thống Kê & Phân Tích)
-- **Namespace dự kiến:** `App\Modules\Report\`
+- **Vị trí thư mục:** `app/Modules/Report/`
 - **Trách nhiệm:** Tổng hợp dữ liệu kinh doanh đa chiều, phân tích doanh thu theo ngày, thống kê số lượng đơn và tỷ lệ hoàn thành, danh sách món ăn bán chạy nhất, tỷ lệ lấp đầy bàn ăn.
 - **Thành phần kỹ thuật:**
   - **Services:** `Admin\ReportService`.
   - **Controllers:** `Admin\ReportController`.
+  - **Requests:** `Admin\DashboardReportRequest`.
+  - **Routes:** `app/Modules/Report/Routes/api.php`.
 - **Danh sách API Endpoints:**
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
@@ -201,33 +220,13 @@
 ---
 
 ### 🧩 MODULE 8: CORE / SHARED (Nền Tảng Dùng Chung)
-- **Namespace dự kiến:** `App\Modules\Core\` hoặc `App\Shared\`
+- **Vị trí thư mục:** `app/Modules/Core/`
 - **Trách nhiệm:** Chứa toàn bộ các thành phần hạ tầng chung mà các module khác phụ thuộc vào:
-  - **Trait:** `ApiResponse` (chuẩn hóa Envelope phản hồi JSON).
+  - **Base Controller:** `BaseController` (kế thừa `Controller`, tích hợp `ApiResponse`).
+  - **Trait:** `ApiResponse` (chuẩn hóa Envelope phản hồi JSON: `success`, `code`, `message`, `data`/`errors`).
   - **Backed Enums:** `RoleType`, `AccountStatus`, `OrderStatus`, `TableStatus`, `ReservationStatus`, `PaymentMethod`, `PaymentStatus`.
   - **Middlewares:** `ForceJsonResponse`, `CheckAccountActive`, `CheckRole`.
   - **Exceptions:** Global Exception Shielding trong `bootstrap/app.php`.
-  - **Database Migrations & Seeders:** 12 bảng cốt lõi và `RestaurantSeeder`.
+  - **Database Migrations & Seeders:** 12 bảng cốt lõi và `RestaurantSeeder` tại `database/`.
 - **Trạng thái Logic:** `X`
-- **Trạng thái Refactor Folder:** `O`
-
----
-
-## 🎯 4. Kế Hoạch & Tiến Độ Tái Cấu Trúc Vật Lý (Refactoring Roadmap)
-
-Dưới đây là bảng theo dõi tiến độ di chuyển code từ kiến trúc Layered cũ sang thư mục Module:
-
-| Giai đoạn | Nội dung công việc | Trạng thái |
-| :---: | :--- | :---: |
-| **P1** | **Chuẩn hóa Tài liệu Đặc tả & Khung Module (`be_docs`)** | `X` |
-| **P2** | **Cập nhật ADR-022: Quyết định Kiến trúc Modular Monolith** | `X` |
-| **P3** | **Khởi tạo cấu trúc Module & Cấu hình ServiceProvider / PSR-4** | `O` |
-| **P4** | **Di chuyển Module `Auth` & `Core`** | ` ` |
-| **P5** | **Di chuyển Module `Menu` & `Cart`** | ` ` |
-| **P6** | **Di chuyển Module `Order` & `Payment`** | ` ` |
-| **P7** | **Di chuyển Module `Reservation` & `Report`** | ` ` |
-| **P8** | **Chạy Verification Suite đảm bảo 100% API hoạt động bình thường** | ` ` |
-
----
-
-*File này sẽ được cập nhật liên tục mỗi khi một Module hoàn tất việc tái cấu trúc. Sau khi cập nhật hoàn thiện xong hết thì bảng 4. Kế Hoạch & Tiến Độ Tái Cấu Trúc Vật Lý sẽ được xóa để đảm bảo không gây nhiễu memory cần thiết.*
+- **Trạng thái Refactor Folder:** `X`
