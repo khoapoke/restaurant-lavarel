@@ -100,6 +100,23 @@ class CartController extends BaseController
             200
         );
     }
+
+    /**
+     * Clear all dishes from cart (CRT-05).
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function clear(Request $request): JsonResponse
+    {
+        $cart = $this->cartService->clearCart((int) $request->user()->ma_tai_khoan);
+
+        return $this->successResponse(
+            new CartResource($cart),
+            'Cart cleared successfully',
+            200
+        );
+    }
 }
 
 

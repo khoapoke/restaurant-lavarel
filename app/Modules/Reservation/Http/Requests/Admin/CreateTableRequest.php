@@ -2,7 +2,7 @@
 
 namespace App\Modules\Reservation\Http\Requests\Admin;
 
-use App\Enums\TableStatus;
+use App\Modules\Core\Enums\TableStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 

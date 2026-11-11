@@ -50,11 +50,7 @@ class AuthService
             ]);
 
             // 4. Create Cart (GIO_HANG)
-            $cartClass = class_exists(\App\Modules\Cart\Models\Cart::class)
-                ? \App\Modules\Cart\Models\Cart::class
-                : \App\Models\Cart::class;
-
-            $cart = $cartClass::create([
+            $cart = \App\Modules\Cart\Models\Cart::create([
                 'ngay_tao' => now(),
                 'ma_tai_khoan' => $account->ma_tai_khoan,
             ]);

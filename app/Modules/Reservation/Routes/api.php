@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Route;
 // 1. Customer Public Table Lookup (BKG-01)
 Route::prefix('customer')->group(function () {
     Route::get('/tables/available', [ReservationController::class, 'availableTables']);
+    Route::get('/reservations/available-tables', [ReservationController::class, 'availableTables']);
 });
 
 // 2. Customer Online Reservation APIs (BKG-02 -> BKG-04)
@@ -16,7 +17,7 @@ Route::prefix('customer/reservations')->middleware(['auth:sanctum', 'account.act
     Route::post('/', [ReservationController::class, 'store']);
     Route::get('/{reservationId}', [ReservationController::class, 'show'])->whereNumber('reservationId');
     Route::put('/{reservationId}', [ReservationController::class, 'update'])->whereNumber('reservationId');
-    Route::post('/{reservationId}/cancel', [ReservationController::class, 'cancel'])->whereNumber('reservationId');
+    Route::match(['post', 'put'], '/{reservationId}/cancel', [ReservationController::class, 'cancel'])->whereNumber('reservationId');
 });
 
 // 3. Admin Tables & Reservations Management APIs (BKG-05 -> BKG-12)
@@ -27,6 +28,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'account.active', 'role:ADMI
         Route::post('/', [AdminTableController::class, 'store']);
         Route::get('/{tableId}', [AdminTableController::class, 'show'])->whereNumber('tableId');
         Route::put('/{tableId}', [AdminTableController::class, 'update'])->whereNumber('tableId');
+        Route::patch('/{tableId}/status', [AdminTableController::class, 'updateStatus'])->whereNumber('tableId');
         Route::delete('/{tableId}', [AdminTableController::class, 'destroy'])->whereNumber('tableId');
     });
 

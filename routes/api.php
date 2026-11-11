@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-Route::prefix('v1')->group(function () {
+$registerModuleRoutes = function () {
     // 1. Auth Module (Shared Auth, Customer Profile, Admin Account Management)
     require app_path('Modules/Auth/Routes/api.php');
 
@@ -35,4 +35,10 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
         return $request->user();
     });
-});
+};
+
+// Primary standard v1 routes: /api/v1/...
+Route::prefix('v1')->group($registerModuleRoutes);
+
+// Direct alias routes: /api/... (supports FE clients configured with baseURL without /v1)
+Route::group([], $registerModuleRoutes);

@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('customer')->group(function () {
     Route::get('/categories', [MenuController::class, 'categories']);
     Route::get('/dishes', [MenuController::class, 'dishes']);
-    Route::get('/dishes/{dishId}', [MenuController::class, 'dishDetail'])->whereNumber('dishId');
+    Route::get('/dishes/search', [MenuController::class, 'dishes']);
+    Route::get('/dishes/recommendations/weather', [MenuController::class, 'weatherRecommendations']);
     Route::get('/recommendations/weather', [MenuController::class, 'weatherRecommendations']);
+    Route::get('/dishes/{dishId}', [MenuController::class, 'dishDetail'])->whereNumber('dishId');
 });
 
 // 2. Admin Menu APIs

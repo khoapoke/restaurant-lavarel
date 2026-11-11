@@ -13,6 +13,7 @@ Route::prefix('customer/payments')->middleware(['auth:sanctum', 'account.active'
 
 // 2. Webhooks Callback (Public - SePay/PayOS/VietQR)
 Route::post('/webhooks/payment-callback', [PaymentController::class, 'handleCallback']);
+Route::post('/customer/payments/webhook', [PaymentController::class, 'handleCallback']);
 
 // 3. Admin Payment & Reconciliation APIs (PAY-04 -> PAY-07)
 Route::prefix('admin/payments')->middleware(['auth:sanctum', 'account.active', 'role:ADMIN'])->group(function () {

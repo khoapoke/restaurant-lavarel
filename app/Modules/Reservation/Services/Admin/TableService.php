@@ -117,6 +117,28 @@ class TableService
     }
 
     /**
+     * Update table status (BKG-08).
+     *
+     * @param int $tableId
+     * @param string $statusName
+     * @return DiningTable
+     * @throws HttpException
+     */
+    public function updateTableStatus(int $tableId, string $statusName): DiningTable
+    {
+        $table = $this->getTable($tableId);
+        $matched = TableStatus::fromName($statusName);
+        if (!$matched) {
+            throw new HttpException(422, 'Invalid table status: ' . $statusName);
+        }
+
+        $table->trang_thai = $matched;
+        $table->save();
+
+        return $table;
+    }
+
+    /**
      * Delete a table if it has no active or upcoming reservations (BKG-06).
      *
      * @param int $tableId

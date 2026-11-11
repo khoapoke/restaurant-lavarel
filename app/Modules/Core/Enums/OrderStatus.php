@@ -8,6 +8,7 @@ enum OrderStatus: string
     case CONFIRMED = 'Đã xác nhận';
     case PREPARING = 'Đang chuẩn bị';
     case READY = 'Sẵn sàng';
+    case DELIVERING = 'Đang giao';
     case COMPLETED = 'Đã giao';
     case CANCELLED = 'Đã hủy';
 
@@ -38,7 +39,8 @@ enum OrderStatus: string
             self::PENDING_CONFIRMATION => in_array($target, [self::CONFIRMED, self::CANCELLED]),
             self::CONFIRMED => in_array($target, [self::PREPARING, self::CANCELLED]),
             self::PREPARING => in_array($target, [self::READY, self::CANCELLED]),
-            self::READY => in_array($target, [self::COMPLETED, self::CANCELLED]),
+            self::READY => in_array($target, [self::DELIVERING, self::COMPLETED, self::CANCELLED]),
+            self::DELIVERING => in_array($target, [self::COMPLETED, self::CANCELLED]),
             self::COMPLETED, self::CANCELLED => false,
         };
     }

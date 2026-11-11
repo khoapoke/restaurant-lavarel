@@ -148,40 +148,26 @@ class Dish extends Model
 
     public function carts(): BelongsToMany
     {
-        $cartClass = class_exists(\App\Modules\Cart\Models\Cart::class)
-            ? \App\Modules\Cart\Models\Cart::class
-            : \App\Models\Cart::class;
-        $pivotClass = class_exists(\App\Modules\Cart\Models\CartItem::class)
-            ? \App\Modules\Cart\Models\CartItem::class
-            : \App\Models\CartItem::class;
-
         return $this->belongsToMany(
-            $cartClass,
+            \App\Modules\Cart\Models\Cart::class,
             'MON_AN_GIO_HANG',
             'ma_mon_an',
             'ma_gio_hang',
             'ma_mon_an',
             'ma_gio_hang'
-        )->using($pivotClass)->withPivot(['so_luong']);
+        )->using(\App\Modules\Cart\Models\CartItem::class)->withPivot(['so_luong']);
     }
 
     public function orders(): BelongsToMany
     {
-        $orderClass = class_exists(\App\Modules\Order\Models\Order::class)
-            ? \App\Modules\Order\Models\Order::class
-            : \App\Models\Order::class;
-        $pivotClass = class_exists(\App\Modules\Order\Models\OrderItem::class)
-            ? \App\Modules\Order\Models\OrderItem::class
-            : \App\Models\OrderItem::class;
-
         return $this->belongsToMany(
-            $orderClass,
+            \App\Modules\Order\Models\Order::class,
             'CHI_TIET_DON_HANG',
             'ma_mon_an',
             'ma_don_hang',
             'ma_mon_an',
             'ma_don_hang'
-        )->using($pivotClass)->withPivot(['so_luong', 'don_gia']);
+        )->using(\App\Modules\Order\Models\OrderItem::class)->withPivot(['so_luong', 'don_gia']);
     }
 }
 

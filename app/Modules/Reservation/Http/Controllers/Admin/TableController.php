@@ -106,6 +106,25 @@ class TableController extends BaseController
             Response::HTTP_OK
         );
     }
+
+    /**
+     * Update table status (BKG-08).
+     *
+     * @param Request $request
+     * @param int $tableId
+     * @return JsonResponse
+     */
+    public function updateStatus(Request $request, int $tableId): JsonResponse
+    {
+        $status = (string) ($request->input('status') ?? $request->input('targetStatus'));
+        $table = $this->tableService->updateTableStatus($tableId, $status);
+
+        return $this->successResponse(
+            new AdminTableResource($table),
+            'Table status updated successfully',
+            Response::HTTP_OK
+        );
+    }
 }
 
 

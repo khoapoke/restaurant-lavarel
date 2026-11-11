@@ -2,7 +2,7 @@
 
 namespace App\Modules\Order\Http\Requests\Admin;
 
-use App\Enums\OrderStatus;
+use App\Modules\Core\Enums\OrderStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 

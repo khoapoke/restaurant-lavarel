@@ -122,5 +122,24 @@ class CartService
 
         return $cart;
     }
+
+    /**
+     * Clear all dishes from customer cart (CRT-05).
+     *
+     * @param int $accountId
+     * @return Cart
+     */
+    public function clearCart(int $accountId): Cart
+    {
+        $cart = Cart::firstOrCreate(
+            ['ma_tai_khoan' => $accountId],
+            ['ngay_tao' => now()]
+        );
+
+        $cart->dishes()->detach();
+        $cart->load('dishes');
+
+        return $cart;
+    }
 }
 
