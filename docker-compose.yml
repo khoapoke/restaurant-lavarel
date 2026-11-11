@@ -1,0 +1,31 @@
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: restaurant-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: restaurant-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474" # Neo4j Browser HTTP
+      - "7687:7687" # Neo4j Bolt Binary Protocol
+    environment:
+      - NEO4J_AUTH=neo4j/password123
+      - NEO4J_server_memory_heap_initial__size=256m
+      - NEO4J_server_memory_heap_max__size=512m
+      - NEO4J_server_memory_pagecache_size=256m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+volumes:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+
