@@ -122,6 +122,27 @@ class OrderService
                     // STEP 7: Làm rỗng bảng MON_AN_GIO_HANG của khách
                     $cart->dishes()->detach();
 
+                    // STEP 8: Real-time Graph Sync sang Neo4j (non-blocking)
+                    try {
+                        $itemsForGraph = [];
+                        foreach ($orderPivotData as $dId => $pivotVal) {
+                            $itemsForGraph[] = [
+                                'dishId' => (int) $dId,
+                                'quantity' => (int) ($pivotVal['so_luong'] ?? 1),
+                                'price' => (float) ($pivotVal['don_gia'] ?? 0),
+                            ];
+                        }
+                        app(\App\Modules\Recommendation\Services\DishRecommendationService::class)->recordOrder(
+                            (int) $order->ma_don_hang,
+                            (int) $accountId,
+                            $itemsForGraph,
+                            now()->toIso8601String(),
+                            (float) $totalAmount
+                        );
+                    } catch (\Throwable $graphEx) {
+                        \Illuminate\Support\Facades\Log::warning('Graph sync failed for order: ' . $graphEx->getMessage());
+                    }
+
                     return $order->load(['dishes', 'payment']);
                 });
             });

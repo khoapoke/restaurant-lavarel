@@ -20,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__ . '/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        \App\Modules\Recommendation\Commands\SyncGraphDataCommand::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         // 1. Never redirect guests to web login in API mode
         $middleware->redirectGuestsTo(fn () => null);

@@ -289,4 +289,65 @@ class ModularApiTest extends TestCase
             'ten_ban' => 'Bàn T01',
         ]);
     }
+
+    /**
+     * Test Neo4j Graph Recommendations paired dishes endpoint.
+     */
+    public function test_graph_recommendations_paired_dishes_returns_json(): void
+    {
+        $category = Category::create([
+            'ten_danh_muc' => 'Khai vị Test',
+            'hien_thi' => true,
+            'da_xoa' => false,
+        ]);
+
+        $dish = Dish::create([
+            'ten_mon_an' => 'Nem ran Hanoi',
+            'gia_tien' => 50000,
+            'ma_danh_muc' => $category->ma_danh_muc,
+            'con_ban' => true,
+            'hien_thi' => true,
+            'da_xoa' => false,
+        ]);
+
+        $response = $this->getJson("/api/v1/customer/dishes/{$dish->ma_mon_an}/recommendations/graph");
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'success',
+                'code',
+                'message',
+                'data',
+            ]);
+    }
+
+    /**
+     * Test Neo4j Graph statistics endpoint.
+     */
+    public function test_graph_stats_returns_json(): void
+    {
+        $response = $this->getJson('/api/v1/customer/recommendations/graph-stats');
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'success',
+                'code',
+                'message',
+                'data',
+            ]);
+    }
+
+    /**
+     * Test personalized recommendations requires customer authentication.
+     */
+    public function test_personalized_recommendations_requires_authentication(): void
+    {
+        $response = $this->getJson('/api/v1/customer/recommendations/personalized');
+
+        $response->assertStatus(401)
+            ->assertJson([
+                'success' => false,
+                'code' => 401,
+            ]);
+    }
 }

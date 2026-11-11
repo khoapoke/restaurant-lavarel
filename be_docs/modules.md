@@ -219,7 +219,25 @@
 
 ---
 
-### 🧩 MODULE 8: CORE / SHARED (Nền Tảng Dùng Chung)
+### 🕸️ MODULE 8: RECOMMENDATION (Động Cơ Gợi Ý Đồ Thị Tri Thức Neo4j)
+- **Vị trí thư mục:** `app/Modules/Recommendation/`
+- **Trách nhiệm:** Quản lý kết nối đồ thị Bolt Neo4j, đồng bộ dữ liệu quan hệ khách hàng - đơn hàng - món ăn, thực hiện thuật toán Market Basket Analysis (gợi ý món gọi kèm) và Collaborative Filtering (gợi ý cá nhân hóa).
+- **Thành phần kỹ thuật:**
+  - **Services:** `Neo4jClientService`, `DishRecommendationService`.
+  - **Controllers:** `Customer\RecommendationController`.
+  - **Commands:** `SyncGraphDataCommand` (`php artisan neo4j:sync`).
+  - **Routes:** `app/Modules/Recommendation/Routes/api.php`.
+- **Danh sách API Endpoints:**
+
+| Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
+| :---: | :---: | :--- | :--- | :---: |
+| `GRA-01` | `GET` | `/api/v1/customer/dishes/{dishId}/recommendations/graph` | Gợi ý món bán kèm (Cross-sell / Market Basket Analysis) | `X` |
+| `GRA-02` | `GET` | `/api/v1/customer/recommendations/personalized` | Gợi ý cá nhân hóa theo khẩu vị & lịch sử đặt hàng (Collaborative Filtering) | `X` |
+| `GRA-03` | `GET` | `/api/v1/customer/recommendations/graph-stats` | Thống kê số lượng Nodes & Relationships trên đồ thị Neo4j | `X` |
+
+---
+
+### 🧩 MODULE 9: CORE / SHARED (Nền Tảng Dùng Chung)
 - **Vị trí thư mục:** `app/Modules/Core/`
 - **Trách nhiệm:** Chứa toàn bộ các thành phần hạ tầng chung mà các module khác phụ thuộc vào:
   - **Base Controller:** `BaseController` (kế thừa `Controller`, tích hợp `ApiResponse`).

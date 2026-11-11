@@ -17,6 +17,7 @@
 | **5** | **`Reservation`** | [`reservation.md`](reservation.md) | Tra cứu bàn trống, Đặt bàn, Sửa/Hủy bàn, Quản lý bàn ăn Admin |
 | **6** | **`Payment`** | [`payment.md`](payment.md) | Sinh mã VietQR, Đối soát giao dịch, Hoàn tiền, Webhook biến động số dư |
 | **7** | **`Report`** | [`report.md`](report.md) | Dashboard tổng quan, Báo cáo Doanh thu, Đơn hàng, Món bán chạy, Lấp đầy bàn |
+| **8** | **`Recommendation`** | [`recommendation.md`](recommendation.md) | Gợi ý món bán kèm (Cross-sell / Market Basket Analysis) & Cá nhân hóa (Collaborative Filtering) qua Đồ thị Neo4j |
 
 ---
 

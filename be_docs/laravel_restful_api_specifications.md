@@ -17,6 +17,7 @@
 | **5** | **`Reservation`** | [**`be_docs/api/reservation.md`**](api/reservation.md) | 11 APIs | Tra cứu bàn trống, Đặt bàn (Redis Lock), Sửa/Hủy bàn, Quản lý bàn ăn Admin |
 | **6** | **`Payment`** | [**`be_docs/api/payment.md`**](api/payment.md) | 6 APIs | Sinh mã VietQR, Đối soát giao dịch, Hoàn tiền, Webhook biến động số dư |
 | **7** | **`Report`** | [**`be_docs/api/report.md`**](api/report.md) | 5 APIs | Dashboard tổng quan, Báo cáo Doanh thu, Đơn hàng, Món bán chạy, Lấp đầy bàn |
+| **8** | **`Recommendation`** | [**`be_docs/api/recommendation.md`**](api/recommendation.md) | 3 APIs | Gợi ý món bán kèm (Cross-sell) & Cá nhân hóa khẩu vị (Collaborative Filtering) qua Đồ thị Neo4j |
 
 ---
 

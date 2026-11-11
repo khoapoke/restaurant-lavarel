@@ -31,6 +31,9 @@ $registerModuleRoutes = function () {
     // 7. Report Module (Admin Dashboard & Analytics)
     require app_path('Modules/Report/Routes/api.php');
 
+    // 8. Recommendation Module (Neo4j Graph-based Recommendations)
+    require app_path('Modules/Recommendation/Routes/api.php');
+
     // Authenticated user test route
     Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
         return $request->user();
