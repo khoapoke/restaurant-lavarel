@@ -7,9 +7,12 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Laravel\Scout\Searchable;
 
 class Dish extends Model
 {
+    use Searchable;
+
     protected $table = 'MON_AN';
     protected $primaryKey = 'ma_mon_an';
     public $timestamps = false;
@@ -168,6 +171,58 @@ class Dish extends Model
             'ma_mon_an',
             'ma_don_hang'
         )->using(\App\Modules\Order\Models\OrderItem::class)->withPivot(['so_luong', 'don_gia']);
+    }
+
+    /**
+     * Get the name of the index associated with the model.
+     */
+    public function searchableAs(): string
+    {
+        return 'dishes';
+    }
+
+    /**
+     * Get the indexable data array for the model.
+     *
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => (int) $this->ma_mon_an,
+            'name' => (string) $this->ten_mon_an,
+            'description' => (string) ($this->mo_ta ?? ''),
+            'price' => (float) $this->gia_tien,
+            'category_id' => (int) $this->ma_danh_muc,
+            'category_name' => (string) ($this->category?->ten_danh_muc ?? ''),
+            'is_available' => (bool) $this->con_ban,
+            'is_visible' => (bool) $this->hien_thi,
+            'is_deleted' => (bool) $this->da_xoa,
+        ];
+    }
+
+    /**
+     * Determine if the model should be searchable.
+     */
+    public function shouldBeSearchable(): bool
+    {
+        return ! $this->da_xoa;
+    }
+
+    /**
+     * Get the value used to index the model.
+     */
+    public function getScoutKey(): mixed
+    {
+        return $this->ma_mon_an;
+    }
+
+    /**
+     * Get the key name used to index the model.
+     */
+    public function getScoutKeyName(): mixed
+    {
+        return 'ma_mon_an';
     }
 }
 

@@ -39,11 +39,16 @@
 
 ### 1.2. Danh sách món ăn có bộ lọc & phân trang (`MNU-02`, `MNU-03`)
 - **Method & URL:** `GET /api/v1/customer/dishes`
+- **Công nghệ tìm kiếm (Smart Search Engine):** **Meilisearch** (qua Laravel Scout) kết hợp MySQL:
+  - **Typo Tolerance:** Hỗ trợ tìm kiếm chịu lỗi chính tả (ví dụ: gõ `tra daoo` vẫn tìm thấy `Trà đào cam sả`, gõ `phoo bo` vẫn ra `Phở bò đặc biệt`).
+  - **Unaccented Search:** Hỗ trợ gõ tiếng Việt không dấu chuẩn xác (`com tam`, `che khuc bach`, `tra dao`).
+  - **Relevance Ranking:** Sắp xếp các kết quả có độ tương đồng cao nhất lên đầu.
+  - **Graceful Fallback:** Tự động fallback về truy vấn SQL `LIKE` an toàn nếu dịch vụ Meilisearch tạm thời gián đoạn.
 - **Query Params:**
-  - `keyword` (`string`, optional): Tìm theo tên món.
+  - `keyword` (`string`, optional): Từ khóa tìm kiếm thông minh full-text (tên món ăn, mô tả, danh mục).
   - `categoryId` (`int`, optional): Lọc theo danh mục.
   - `minPrice`, `maxPrice` (`numeric`, optional): Khoảng giá.
-  - `isAvailable` (`boolean`, optional): Tình trạng còn bán.
+  - `isAvailable` (`boolean`, optional): Tình trạng còn bán (`true`/`false`).
   - `excludeAllergens` (`string`, optional): Loại trừ chất dị ứng (ví dụ: `SHELLFISH,PEANUT`).
   - `page` (`int`, default `1`), `perPage` (`int`, default `12`).
 - **Response JSON Sample (Success - 200 OK):**

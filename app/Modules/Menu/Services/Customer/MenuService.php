@@ -47,15 +47,57 @@ class MenuService
             throw new HttpException(400, 'minPrice cannot be greater than maxPrice');
         }
 
-        $query = Dish::with('category')
-            ->where('da_xoa', false)
-            ->where('hien_thi', true);
+        $perPage = (int) ($filters['perPage'] ?? 12);
+        $page = (int) ($filters['page'] ?? 1);
 
-        // 1. Tìm kiếm theo keyword trong tên món ăn (ten_mon_an)
+        // 1. Tìm kiếm bằng Meilisearch khi có keyword
         if (!empty($filters['keyword'])) {
             $keyword = trim($filters['keyword']);
-            $query->where('ten_mon_an', 'like', "%{$keyword}%");
+
+            try {
+                if (config('scout.driver') === 'meilisearch') {
+                    return Dish::search($keyword)
+                        ->query(fn (Builder $builder) => $this->applyDishFilters($builder, $filters, $hasMinPrice, $hasMaxPrice))
+                        ->paginate($perPage, 'page', $page);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Meilisearch search failed, falling back to database query: ' . $e->getMessage());
+            }
+
+            // Fallback nếu Meilisearch lỗi hoặc driver != meilisearch
+            $query = Dish::query();
+            $this->applyDishFilters($query, $filters, $hasMinPrice, $hasMaxPrice);
+            $query->where(function (Builder $q) use ($keyword) {
+                $q->where('ten_mon_an', 'like', "%{$keyword}%")
+                    ->orWhere('mo_ta', 'like', "%{$keyword}%");
+            });
+
+            return $query->orderBy('ma_mon_an', 'asc')
+                ->paginate($perPage, ['*'], 'page', $page);
         }
+
+        // Không có keyword: duyệt danh sách bình thường
+        $query = Dish::query();
+        $this->applyDishFilters($query, $filters, $hasMinPrice, $hasMaxPrice);
+
+        return $query->orderBy('ma_mon_an', 'asc')
+            ->paginate($perPage, ['*'], 'page', $page);
+    }
+
+    /**
+     * Apply common dish filters (visibility, category, price, availability, allergens).
+     *
+     * @param Builder $query
+     * @param array $filters
+     * @param bool $hasMinPrice
+     * @param bool $hasMaxPrice
+     * @return void
+     */
+    protected function applyDishFilters(Builder $query, array $filters, bool $hasMinPrice, bool $hasMaxPrice): void
+    {
+        $query->with('category')
+            ->where('da_xoa', false)
+            ->where('hien_thi', true);
 
         // 2. Lọc theo danh mục (categoryId)
         if (!empty($filters['categoryId']) && is_numeric($filters['categoryId'])) {
@@ -91,12 +133,6 @@ class MenuService
                 }
             }
         }
-
-        $perPage = (int) ($filters['perPage'] ?? 12);
-        $page = (int) ($filters['page'] ?? 1);
-
-        return $query->orderBy('ma_mon_an', 'asc')
-            ->paginate($perPage, ['*'], 'page', $page);
     }
 
     /**

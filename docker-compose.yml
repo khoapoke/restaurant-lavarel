@@ -24,8 +24,22 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: restaurant-meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700" # Meilisearch HTTP REST API
+    environment:
+      - MEILI_MASTER_KEY=masterKey123
+      - MEILI_ENV=development
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meili_data:/meili_data
+
 volumes:
   redis_data:
   neo4j_data:
   neo4j_logs:
+  meili_data:
 

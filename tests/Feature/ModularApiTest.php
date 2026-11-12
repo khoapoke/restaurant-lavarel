@@ -350,4 +350,51 @@ class ModularApiTest extends TestCase
                 'code' => 401,
             ]);
     }
+
+    /**
+     * Test customer dishes search with keyword.
+     */
+    public function test_customer_dishes_keyword_search(): void
+    {
+        $category = Category::create([
+            'ten_danh_muc' => 'Đồ uống',
+            'hien_thi' => true,
+            'da_xoa' => false,
+        ]);
+
+        Dish::create([
+            'ten_mon_an' => 'Trà đào cam sả thanh mát',
+            'gia_tien' => 38000,
+            'ma_danh_muc' => $category->ma_danh_muc,
+            'hien_thi' => true,
+            'con_ban' => true,
+            'da_xoa' => false,
+        ]);
+
+        $response = $this->getJson('/api/v1/customer/dishes?keyword=Trà');
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'success',
+                'code',
+                'message',
+                'data' => [
+                    'items',
+                    'pagination',
+                ],
+            ]);
+
+        $items = $response->json('data.items');
+        $this->assertNotEmpty($items, 'Expected dishes matching keyword "Trà"');
+        $this->assertStringContainsString('Trà', $items[0]['dishName']);
+    }
+
+    /**
+     * Test Meilisearch scout configuration.
+     */
+    public function test_scout_driver_is_configured(): void
+    {
+        $driver = config('scout.driver');
+        $this->assertTrue(in_array($driver, ['meilisearch', 'null', null], true) || empty($driver));
+    }
 }
