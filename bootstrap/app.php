@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Exception\RouteNotFoundException;
+use App\Modules\Recommendation\Commands\SyncGraphDataCommand;
+use App\Modules\Core\Commands\MakeModuleCommand;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -21,7 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withCommands([
-        \App\Modules\Recommendation\Commands\SyncGraphDataCommand::class,
+        SyncGraphDataCommand::class,
+        
+        MakeModuleCommand::class
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // 1. Never redirect guests to web login in API mode
