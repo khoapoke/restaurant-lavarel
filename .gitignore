@@ -29,3 +29,5 @@ Thumbs.db
 nosql_scripts/
 nosql_doc/
 diagrams/
+/.claude
+/.agents
