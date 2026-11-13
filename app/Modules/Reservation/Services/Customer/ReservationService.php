@@ -269,7 +269,8 @@ class ReservationService
      */
     public function cancelReservation(int $accountId, int $reservationId): Reservation
     {
-        $reservation = Reservation::where('ma_dat_ban', $reservationId)
+        $reservation = Reservation::with('diningTable')
+            ->where('ma_dat_ban', $reservationId)
             ->where('ma_tai_khoan', $accountId)
             ->first();
 
@@ -289,6 +290,18 @@ class ReservationService
         $minutesUntilArrival = now()->diffInMinutes($reservation->thoi_gian, false);
         if ($minutesUntilArrival < 60) {
             throw new HttpException(409, 'Cannot modify or cancel reservation less than 60 minutes before scheduled time');
+        }
+
+        $table = $reservation->diningTable;
+        if ($table && $table->trang_thai === TableStatus::RESERVED) {
+            $hasOtherConfirmed = Reservation::where('ma_ban', $reservation->ma_ban)
+                ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
+                ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                ->exists();
+            if (!$hasOtherConfirmed) {
+                $table->trang_thai = TableStatus::AVAILABLE;
+                $table->save();
+            }
         }
 
         $reservation->trang_thai = ReservationStatus::CANCELLED;

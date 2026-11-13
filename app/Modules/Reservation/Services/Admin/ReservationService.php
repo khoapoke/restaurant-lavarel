@@ -133,11 +133,18 @@ class ReservationService
      * @param int $reservationId
      * @param string $targetStatusInput
      * @param string|null $adminNote
+     * @param int|null $newTableId
+     * @param string|null $tableStatusInput
      * @return array<string, mixed>
      * @throws HttpException
      */
-    public function updateStatus(int $reservationId, string $targetStatusInput, ?string $adminNote = null): array
-    {
+    public function updateStatus(
+        int $reservationId,
+        string $targetStatusInput,
+        ?string $adminNote = null,
+        ?int $newTableId = null,
+        ?string $tableStatusInput = null
+    ): array {
         $reservation = Reservation::with('diningTable')
             ->where('ma_dat_ban', $reservationId)
             ->first();
@@ -151,10 +158,42 @@ class ReservationService
             throw new HttpException(400, "Invalid target status: {$targetStatusInput}");
         }
 
-        $table = $reservation->diningTable;
+        $oldTable = $reservation->diningTable;
+        $oldTableId = $reservation->ma_ban ? (int) $reservation->ma_ban : null;
 
-        // BKG-09: Khi Admin duyệt đặt bàn (CONFIRMED)
+        // 1. Cập nhật đổi bàn ăn nếu có truyền newTableId
+        if ($newTableId && $newTableId !== $oldTableId) {
+            $newTable = \App\Modules\Reservation\Models\DiningTable::find($newTableId);
+            if (!$newTable) {
+                throw new HttpException(404, "Selected table #{$newTableId} not found");
+            }
+            if ($newTable->trang_thai === TableStatus::MAINTENANCE) {
+                throw new HttpException(400, "Selected table #{$newTableId} is currently under maintenance");
+            }
+            $reservation->ma_ban = $newTableId;
+            $table = $newTable;
+
+            // Giải phóng bàn cũ nếu trước đó là RESERVED và không còn đơn CONFIRMED nào khác
+            if ($oldTable && $oldTable->trang_thai === TableStatus::RESERVED) {
+                $hasOtherConfirmed = Reservation::where('ma_ban', $oldTableId)
+                    ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
+                    ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                    ->exists();
+                if (!$hasOtherConfirmed) {
+                    $oldTable->trang_thai = TableStatus::AVAILABLE;
+                    $oldTable->save();
+                }
+            }
+        } else {
+            $table = $oldTable;
+        }
+
+        // 2. Khi Admin duyệt đặt bàn (CONFIRMED)
         if ($targetStatus === ReservationStatus::CONFIRMED) {
+            if (!$reservation->ma_ban) {
+                throw new HttpException(422, 'Vui lòng chọn bàn ăn để duyệt đặt bàn');
+            }
+
             $resTime = Carbon::parse($reservation->thoi_gian);
             $startTime = $resTime->copy()->subMinutes(119);
             $endTime = $resTime->copy()->addMinutes(119);
@@ -167,25 +206,50 @@ class ReservationService
                 ->exists();
 
             if ($hasOverlappingConfirmed) {
-                throw new HttpException(409, "Table #{$reservation->ma_ban} has an overlapping CONFIRMED reservation at this time");
+                throw new HttpException(409, "Bàn #{$reservation->ma_ban} đã có lượt đặt bàn khác được xác nhận trong khoảng thời gian này");
             }
 
-            // Đồng bộ trạng thái bàn sang RESERVED
+            // Đồng bộ trạng thái bàn sang RESERVED hoặc trạng thái chỉ định
             if ($table && $table->trang_thai !== TableStatus::MAINTENANCE) {
-                $table->trang_thai = TableStatus::RESERVED;
+                if ($tableStatusInput) {
+                    $matched = TableStatus::fromName($tableStatusInput);
+                    if ($matched) {
+                        $table->trang_thai = $matched;
+                    }
+                } elseif ($table->trang_thai !== TableStatus::OCCUPIED) {
+                    $table->trang_thai = TableStatus::RESERVED;
+                }
                 $table->save();
             }
         }
 
-        // BKG-10, BKG-11, BKG-12: Khi chuyển sang REJECTED, CANCELLED, COMPLETED -> Giải phóng bàn
+        // 3. Cập nhật trạng thái bàn nếu có yêu cầu trực tiếp (ví dụ khách nhận bàn -> OCCUPIED)
+        if ($tableStatusInput && $table && $table->trang_thai !== TableStatus::MAINTENANCE) {
+            $matchedTableStatus = TableStatus::fromName($tableStatusInput);
+            if ($matchedTableStatus) {
+                $table->trang_thai = $matchedTableStatus;
+                $table->save();
+            }
+        }
+
+        // 4. BKG-10, BKG-11, BKG-12: Khi chuyển sang REJECTED, CANCELLED, COMPLETED -> Giải phóng bàn về AVAILABLE
         if (in_array($targetStatus, [
             ReservationStatus::REJECTED,
             ReservationStatus::CANCELLED,
             ReservationStatus::COMPLETED,
         ])) {
-            if ($table && $table->trang_thai === TableStatus::RESERVED) {
-                $table->trang_thai = TableStatus::AVAILABLE;
-                $table->save();
+            if ($table && $table->trang_thai !== TableStatus::MAINTENANCE) {
+                // Kiểm tra xem bàn có còn lượt CONFIRMED nào khác không
+                $hasOtherActive = Reservation::where('ma_ban', $reservation->ma_ban)
+                    ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
+                    ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                    ->whereDate('thoi_gian', Carbon::parse($reservation->thoi_gian)->toDateString())
+                    ->exists();
+
+                if (!$hasOtherActive) {
+                    $table->trang_thai = TableStatus::AVAILABLE;
+                    $table->save();
+                }
             }
         }
 

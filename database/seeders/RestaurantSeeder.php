@@ -107,6 +107,16 @@ class RestaurantSeeder extends Seeder
             'ma_vai_tro' => $roleAdmin->ma_vai_tro,
         ]);
 
+        // Admin test account ('admin1' / pass: '123')
+        $accAdmin1 = Account::create([
+            'ten_dang_nhap' => 'admin1',
+            'mat_khau' => Hash::make('123'),
+            'email' => 'admin1@restaurant.com',
+            'trang_thai' => AccountStatus::ACTIVE,
+            'ma_nguoi_dung' => $profileAdmin->ma_nguoi_dung,
+            'ma_vai_tro' => $roleAdmin->ma_vai_tro,
+        ]);
+
         // Staff account
         $accStaff = Account::create([
             'ten_dang_nhap' => 'staff1',

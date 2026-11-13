@@ -22,6 +22,8 @@ class UpdateReservationStatusRequest extends FormRequest
 
         return [
             'targetStatus' => ['required', 'string', Rule::in($allowedStatuses)],
+            'tableId' => ['nullable', 'integer', 'exists:BAN_AN,ma_ban'],
+            'tableStatus' => ['nullable', 'string'],
             'adminNote' => ['nullable', 'string', 'max:500'],
         ];
     }

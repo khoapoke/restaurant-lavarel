@@ -103,8 +103,10 @@ class ReservationController extends BaseController
     {
         $targetStatus = $request->input('targetStatus');
         $adminNote = $request->input('adminNote');
+        $tableId = $request->input('tableId') ? (int) $request->input('tableId') : null;
+        $tableStatus = $request->input('tableStatus');
 
-        $result = $this->reservationService->updateStatus($reservationId, $targetStatus, $adminNote);
+        $result = $this->reservationService->updateStatus($reservationId, $targetStatus, $adminNote, $tableId, $tableStatus);
 
         $message = ($targetStatus === 'CONFIRMED' || $targetStatus === 'Đã xác nhận')
             ? 'Reservation confirmed successfully'

@@ -62,7 +62,7 @@ class MakeModuleCommand extends Command
         }
 
         // 3. Thực thi lệnh gốc của Laravel ở bên dưới
-        $this->info("🚀 Đang khởi tạo {$type} cho Module [{$module}]...");
+        $this->info(" Đang khởi tạo {$type} cho Module [{$module}]...");
         
         Artisan::call($mapping['command'], [
             'name' => $mapping['path'],
