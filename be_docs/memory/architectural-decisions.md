@@ -317,17 +317,34 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
     - Tạo `be_docs/api/README.md` chuẩn hóa giao thức phản hồi (Envelopes), mã lỗi HTTP và cơ chế che chắn ngoại lệ.
     - Tạo `be_docs/modules.md` đóng vai trò là bản đồ kiến trúc module và bảng theo dõi tiến độ hoàn thành các module.
 
-## ADR-023: Chuyển Đổi Sang Pure Modular Monolith (Loại Bỏ Hoàn Toàn Lớp Tương Thích Ngược)
-- **Ngày quyết định:** 2026-11-11
+## ADR-024: Tái Cấu Trúc Tài Liệu Nghiệp Vụ Chuẩn Software Architect (Module-Centric Use Cases)
+- **Ngày quyết định:** 2026-11-13
 - **Bối cảnh:**
-  - Sau khi di chuyển mã nguồn sang `app/Modules/`, hệ thống vẫn còn duy trì các lớp và file tương thích ngược cũ tại `app/Models/`, `app/Services/`, `app/Http/Controllers/Api/`, `app/Http/Requests/`, `app/Http/Resources/`, `app/Http/Middleware/`, `app/Enums/`, `app/Traits/`.
-  - Việc duy trì hai tầng code song song gây nhiễu mã nguồn, giảm tính rành mạch của kiến trúc Module Monolith và làm dư thừa tài nguyên bảo trì.
+  - Trước đây, tài liệu nghiệp vụ tầng L3 (`business_logic_and_validation_rules.md`) được viết dưới dạng tài liệu nguyên khối (Monolithic Doc), trong khi đặc tả API lại nằm riêng ở `be_docs/api/*.md`.
+  - Sự phân tán này khiến nhà phát triển và AI phải tra cứu nhiều file rời rạc khi triển khai một tính năng hoặc API cụ thể.
+  - Dự án cần một cấu trúc tài liệu cấp doanh nghiệp (Enterprise-grade) theo chuẩn Software Architect: kết hợp "What" (API Protocol / Contract), "How" (Business Rules / Algorithms / FSM) và "Why" (Domain Logic / Constraints) vào một điểm tra cứu duy nhất cho mỗi Module.
 - **Quyết định:**
-  - **Xóa bỏ triệt để toàn bộ thư mục và file legacy:** Xóa sạch `app/Models`, `app/Services`, `app/Http/Controllers/Api`, `app/Http/Requests`, `app/Http/Resources`, `app/Http/Middleware`, `app/Enums`, `app/Traits`.
-  - **100% Pure Modular Directory:** Toàn bộ thực thể chỉ sống độc quyền tại `app/Modules/{ModuleName}/`.
-  - **Đồng bộ Database Seeders:** Cập nhật `RestaurantSeeder` và `DatabaseSeeder` trực tiếp gọi các Model và Enum thuộc `App\Modules\...`.
-  - **Đồng bộ Config Auth:** `config/auth.php` cấu hình provider model trỏ thẳng sang `\App\Modules\Auth\Models\Account::class`.
-  - **Kiểm thử tự động:** Xác nhận 100% test cases (bao gồm Seeder và API flow) đều vượt qua kiểm tra với `composer dump-autoload` được làm mới hoàn toàn.
+  - **Tổ chức thư mục `be_docs/modules/`:** Mỗi module nghiệp vụ sở hữu một tệp markdown độc lập tích hợp toàn diện:
+    1. `be_docs/modules/auth.md` (11 Use Cases)
+    2. `be_docs/modules/menu.md` (14 Use Cases)
+    3. `be_docs/modules/cart.md` (5 Use Cases)
+    4. `be_docs/modules/order.md` (7 Use Cases + FSM)
+    5. `be_docs/modules/reservation.md` (11 Use Cases + 2 FSM)
+    6. `be_docs/modules/payment.md` (7 Use Cases)
+    7. `be_docs/modules/report.md` (5 Use Cases)
+    8. `be_docs/modules/recommendation.md` (3 Use Cases + Neo4j Graph)
+  - **Cấu trúc 4 phần chuẩn hóa cho từng module:**
+    1. *Tổng quan & Trách nhiệm Bounded Context.*
+    2. *Thành phần kỹ thuật (Models, Services, Controllers, Requests, Resources, Routes).*
+    3. *Domain Rules (Redis Lock, Cache, Soft Delete, State Transition matrix).*
+    4. *Use Cases chi tiết (Actor, Precondition, Validation Rules, Thuật toán từng bước, Flowchart/State Diagram, JSON Envelope mẫu, Alt Flow & Error Codes).*
+  - **Tối ưu hóa OpenAPI Schema & Giảm tải Token (Streamlined Edition):**
+    - Áp dụng nguyên tắc Schema-first: Định nghĩa JSON Resource mẫu cho Frontend ở đầu mỗi nhóm, gom các API CRUD đơn giản thành bảng 1 dòng.
+    - Giữ nguyên 100% chi tiết thuật toán, FSM và Distributed Lock cho các Use Case phức tạp.
+    - Giảm 80% dung lượng thư mục `modules/` (từ 268 KB xuống 52 KB) ngăn chặn hoàn toàn nguy cơ cạn kiệt token/burn out cho AI.
+  - **Tài liệu quy ước cốt lõi:** Khởi tạo `be_docs/system_conventions.md` đóng vai trò là bản tra cứu nhanh 98 dòng (Cheat Sheet) cho các quy tắc bất biến.
+  - **Chỉ mục tổng thể:** Cập nhật `be_docs/README.md` làm cửa ngõ duy nhất. Xóa bỏ các tệp trùng lặp (`laravel_restful_api_specifications.md`, `business_logic_and_validation_rules.md`, `be_docs/api/`).
+  - **Chuẩn hóa Thuật ngữ Kỹ thuật:** Phân biệt tường minh giữa **"Luồng thực thi" (Execution Flow)** cho các nghiệp vụ transaction/CRUD/FSM thông thường (`auth`, `menu`, `order`, `reservation`, `payment`) và **"Thuật toán" (Algorithm)** dành riêng cho giải thuật tính toán khoa học máy tính (`recommendation` - Neo4j Graph Cypher Traversal, Collaborative Filtering).
 
 
 

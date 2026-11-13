@@ -26,10 +26,11 @@ flowchart TD
 
 ### BƯỚC 1: Phân Tích Chuyên Sâu (In-depth Analysis)
 - Đọc và tra cứu kỹ các tài liệu đặc tả nghiệp vụ tương ứng trong thư mục `be_docs/` trước khi bắt đầu:
-  1. [`be_docs/api/README.md`](be_docs/api/README.md): Quy ước Response Envelopes, mã lỗi HTTP và định dạng JSON chuẩn.
-  2. [`be_docs/modules.md`](be_docs/modules.md): Ranh giới Module, danh sách API và tiến độ của từng module.
-  3. [`be_docs/business_logic_and_validation_rules.md`](be_docs/business_logic_and_validation_rules.md): Thuật toán xử lý L3, chuyển trạng thái FSM, tính tiền, khóa tài khoản.
-  4. [`be_docs/glossary_and_laravel_eloquent_mapping.md`](be_docs/glossary_and_laravel_eloquent_mapping.md): 12 Models Eloquent, quan hệ nhiều-nhiều, Backed Enums.
+  1. [`be_docs/system_conventions.md`](be_docs/system_conventions.md): Quy ước hệ thống cốt lõi, 7 Enums, Redis keys, Soft Delete và Pivot rules.
+  2. [`be_docs/api_protocol_specification.md`](be_docs/api_protocol_specification.md): Quy ước Response Envelopes, mã lỗi HTTP và định dạng JSON chuẩn.
+  3. [`be_docs/modules/`](be_docs/modules/): Đặc tả nghiệp vụ chuyên sâu, Use Cases, FSM, validation rules, luồng thực thi và thuật toán từng module (`auth.md`, `menu.md`, `order.md`...).
+  4. [`be_docs/modules.md`](be_docs/modules.md): Ranh giới Module, danh sách API và tiến độ của từng module.
+  5. [`be_docs/glossary_and_laravel_eloquent_mapping.md`](be_docs/glossary_and_laravel_eloquent_mapping.md): 12 Models Eloquent, quan hệ nhiều-nhiều, Backed Enums.
 - Phân tích rõ mục tiêu cần đạt, luồng dữ liệu (Request $\rightarrow$ Route $\rightarrow$ Middleware $\rightarrow$ FormRequest $\rightarrow$ Controller $\rightarrow$ Service $\rightarrow$ Model $\rightarrow$ Resource $\rightarrow$ Response).
 
 ---

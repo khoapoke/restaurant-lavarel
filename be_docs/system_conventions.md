@@ -1,0 +1,94 @@
+# ⚙️ QUY ƯỚC HỆ THỐNG CỐT LÕI (BACKEND SYSTEM CONVENTIONS)
+## Bảng Tra Cứu Quy Tắc Bất Biến & Chuẩn Mực Kỹ Thuật (System Cheat Sheet)
+
+> **Mục tiêu:** Cung cấp tài liệu tra cứu nhanh (Quick Reference) toàn bộ các quy tắc, chuẩn mực và ràng buộc kỹ thuật cốt lõi trong hệ thống Laravel 11.  
+> **Dành cho:** Kỹ sư phần mềm, Frontend Developer và AI Agents khi triển khai hoặc kiểm thử tính năng mới.
+
+---
+
+## 📨 1. Chuẩn Hóa Phản Hồi JSON (Unified ApiResponse Envelope)
+
+Mọi Controller API kế thừa `BaseController` và sử dụng Trait `ApiResponse`:
+
+```json
+// Thành công đơn / cập nhật: 200 OK
+{ "success": true, "code": 200, "message": "...", "data": { ... } }
+
+// Tạo mới tài nguyên: 201 Created
+{ "success": true, "code": 201, "message": "...", "data": { ... } }
+
+// Phân trang (Pagination): 200 OK
+{
+  "success": true, "code": 200, "message": "...",
+  "data": [ ... ],
+  "meta": { "currentPage": 1, "perPage": 10, "total": 35, "lastPage": 4 },
+  "links": { "first": "...", "last": "...", "prev": null, "next": "..." }
+}
+
+// Báo lỗi: 4xx / 5xx
+{ "success": false, "code": 422, "message": "The given data was invalid.", "errors": { "field": ["Detail error"] } }
+```
+
+> [!IMPORTANT]
+> **Quy tắc Vàng API:** 100% không bao giờ trả về HTML hoặc redirect về login. Middleware `ForceJsonResponse` tự động ép header `Accept: application/json`.
+
+---
+
+## 🏷️ 2. Danh Mục 7 Backed Enums Hệ Thống (`App\Modules\Core\Enums`)
+
+| Enum Class | Giá trị Enum (Code PHP) | Chuỗi lưu trữ trong MySQL (Database Value) |
+| :--- | :--- | :--- |
+| **`RoleType`** | `ADMIN`, `STAFF`, `CUSTOMER` | `'ADMIN'`, `'STAFF'`, `'CUSTOMER'` |
+| **`AccountStatus`**| `ACTIVE`, `LOCKED` | `'ACTIVE'`, `'LOCKED'` |
+| **`OrderStatus`**  | `PENDING_CONFIRMATION`<br>`CONFIRMED`<br>`PREPARING`<br>`READY`<br>`COMPLETED`<br>`CANCELLED` | `'Chờ xác nhận'`<br>`'Đã xác nhận'`<br>`'Đang chuẩn bị'`<br>`'Sẵn sàng'`<br>`'Đã giao'`<br>`'Đã hủy'` |
+| **`TableStatus`**  | `AVAILABLE`, `RESERVED`, `OCCUPIED`, `MAINTENANCE` | `'Trống'`, `'Đã đặt'`, `'Đang sử dụng'`, `'Bảo trì'` |
+| **`ReservationStatus`**| `PENDING`, `CONFIRMED`, `SEATED`, `COMPLETED`, `CANCELLED`, `REJECTED` | `'Chờ xử lý'`, `'Đã xác nhận'`, `'Đang dùng bữa'`, `'Hoàn thành'`, `'Đã hủy'`, `'Từ chối'` |
+| **`PaymentMethod`**| `CASH`, `BANK_TRANSFER_QR` | `'Tiền mặt'`, `'Chuyển khoản'` |
+| **`PaymentStatus`**| `UNPAID`, `PAID`, `FAILED`, `REFUNDED` | `'Chưa thanh toán'`, `'Đã thanh toán'`, `'Thất bại'`, `'Đã hoàn tiền'` |
+
+---
+
+## 🔒 3. Khóa Phân Tán & Bộ Nhớ Đệm Redis (Distributed Locks & Cache)
+
+| Mục đích | Loại tài nguyên | Định dạng Key Pattern | TTL (Thời gian sống) | Cơ chế hủy / Giải phóng |
+| :--- | :--- | :--- | :---: | :--- |
+| **Checkout Đơn hàng** | Distributed Lock | `lock:order:checkout:{accountId}` | 10 giây | Tự động nhả trong `finally` block |
+| **Đặt bàn ăn** | Distributed Lock | `lock:reservation:table:{tableId}` | 5 giây | Tự động nhả trong `finally` block |
+| **Danh mục Menu** | In-Memory Cache | `menu:categories:active` | 3600s (1 giờ) | Cache Busting (`Cache::forget`) khi Admin sửa danh mục |
+| **Gợi ý Thời tiết** | In-Memory Cache | `weather_rec_{lat}_{lon}` | 900s (15 phút)| Hết hạn tự nhiên theo TTL |
+
+---
+
+## 🗑️ 4. Quy Tắc Xóa Mềm & Ràng Buộc Khóa Ngoại (Soft Delete Policy)
+
+- **Món ăn (`MON_AN`) & Danh mục (`DANH_MUC`):**
+  - **TUYỆT ĐỐI KHÔNG** gọi lệnh xóa vật lý `$dish->delete()`. Vi phạm ràng buộc khóa ngoại trong `CHI_TIET_DON_HANG` và `MON_AN_GIO_HANG`.
+  - **Luật Xóa mềm:** Luôn cập nhật cờ `$dish->update(['da_xoa' => true, 'hien_thi' => false])`.
+  - **Truy vấn menu khách:** Luôn gán scope `.where('da_xoa', false)->where('hien_thi', true)`.
+
+---
+
+## 🛒 5. Quy Tắc Bảng Pivot Không Có Cột ID Tự Tăng (BelongsToMany)
+
+- **Bảng `MON_AN_GIO_HANG` & `CHI_TIET_DON_HANG`:**
+  - Khóa chính là phức hợp `(ma_gio_hang, ma_mon_an)` hoặc `(ma_don_hang, ma_mon_an)`.
+  - **TUYỆT ĐỐI KHÔNG** gọi `$item->save()` trên Model Pivot vì Eloquent sẽ sinh `WHERE id = NULL`.
+  - **Kỹ thuật chuẩn:** Sử dụng các phương thức Pivot qua quan hệ `belongsToMany`:
+    - Thêm món: `$cart->dishes()->attach($dishId, ['so_luong' => $qty])`
+    - Cập nhật số lượng: `$cart->dishes()->updateExistingPivot($dishId, ['so_luong' => $qty])`
+    - Xóa món: `$cart->dishes()->detach($dishId)`
+    - Xóa rỗng giỏ: `$cart->dishes()->detach()`
+
+---
+
+## 🛡️ 6. Quy Tắc Bảo Mật Tài Khoản (Rule AUTH-LOCK & BCrypt)
+
+1. **Rule AUTH-LOCK:** Khi Admin khóa tài khoản:
+   - Chặn Admin không được tự khóa chính mình: `$target->ma_tai_khoan !== $admin->ma_tai_khoan`.
+   - Cập nhật `trang_thai = AccountStatus::LOCKED`.
+   - Lập tức gọi `$target->tokens()->delete()` để thu hồi toàn bộ Sanctum tokens, ép logout ngay lập tức.
+2. **Auto-Upgrade BCrypt:** Khi khách đăng nhập lần đầu với mật khẩu rõ `'123'` từ file SQL mẫu:
+   - Hệ thống so khớp `hash_equals($stored, $plain)`.
+   - Nếu khớp, tự động mã hóa lại bằng `Hash::make($plain)` và lưu lại DB.
+3. **Ẩn mật khẩu:** Model `Account` luôn bật `protected $hidden = ['mat_khau'];`.
+

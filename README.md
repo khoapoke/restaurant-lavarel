@@ -18,7 +18,7 @@ Dự án này là phân hệ **Backend Service thuần RESTful API** phục vụ
 2. **Chuẩn hóa phản hồi tuyệt đối (Unified JSON Response Envelopes):**
    - Thành công: `{"success": true, "code": 200/201, "message": "...", "data": { ... }}`
    - Thất bại: `{"success": false, "code": 4xx/5xx, "message": "...", "errors": { ... }}`
-   - Xem chi tiết tại: [be_docs/api/README.md](be_docs/api/README.md).
+   - Xem chi tiết tại: [be_docs/api_protocol_specification.md](be_docs/api_protocol_specification.md).
 3. **Lá chắn Ngoại lệ Toàn cục (Global Exception Shielding):**
    - Middleware `ForceJsonResponse` tự động ép header `Accept: application/json` cho mọi request đến `/api/*`, triệt tiêu triệt để hành vi mặc định redirect về route HTML `login` của Laravel khi thiếu Bearer Token.
    - Bắt và đóng gói toàn bộ các exception (`ValidationException` 422, `AuthenticationException` 401, `AuthorizationException` 403, `ModelNotFoundException` 404, `HttpException` 409/429, `Throwable` 500) mà không làm lộ file stack trace ra ngoài.
@@ -63,13 +63,14 @@ restaurant-lavarel/
 │   └── Providers/
 │       └── AppServiceProvider.php      # ServiceProvider cấu hình hệ thống & MorphMap
 ├── be_docs/                            # HỆ THỐNG TÀI LIỆU KỸ THUẬT (TECHNICAL DOCS)
-│   ├── api/                            # Đặc tả API cho từng module (auth, menu, cart, order, reservation...)
+│   ├── README.md                       # Trang mục lục điều hướng trung tâm
+│   ├── api_protocol_specification.md   # Chuẩn Response Envelopes, Mã lỗi HTTP, Headers & Axios
+│   ├── modules/                        # Đặc tả Use Cases & Thuật toán L3 chi tiết cho 8 module
+│   │   ├── auth.md, menu.md, cart.md, order.md, reservation.md, payment.md, report.md, recommendation.md
 │   ├── modules.md                      # Bản đồ Module & Bảng theo dõi tiến độ hoàn thành các Module
-│   ├── business_logic_and_validation_rules.md  # Thuật toán L3, FSM trạng thái và luật nghiệp vụ
 │   ├── glossary_and_laravel_eloquent_mapping.md # Ánh xạ 12 Model Eloquent & Foreign Key Matrix
-│   ├── laravel_restful_api_specifications.md    # Mục lục điều hướng API tổng thể
 │   └── memory/
-│       ├── architectural-decisions.md  # Nhật ký 23 quyết định kiến trúc hệ thống (ADR-001 -> ADR-023)
+│       ├── architectural-decisions.md  # Nhật ký quyết định kiến trúc hệ thống (ADR-001 -> ADR-024)
 │       └── lessons-learned.md          # Lưu vết bài học kinh nghiệm và giải pháp fix lỗi môi trường
 ├── database/
 │   ├── migrations/                     # Schema 12 bảng cơ sở dữ liệu + personal_access_tokens
@@ -232,9 +233,10 @@ php artisan tinker --execute="echo Illuminate\Support\Facades\Redis::ping() ? 'R
 
 ## 📚 8. Bản Đồ Tài Liệu Kỹ Thuật Chi Tiết (Technical Documentation Map)
 
-1. **[Đặc tả Mã Lỗi & Response Envelopes](be_docs/api/README.md):** Cấu trúc JSON chuẩn, HTTP status codes, mã lỗi nghiệp vụ, hướng dẫn header từ Client.
-2. **[Bản Đồ Module & Tiến Độ Dự Án](be_docs/modules.md):** Danh mục các module, phân rã danh sách API, trạng thái đã làm xong / đang làm / chưa làm.
-3. **[Thuật Toán L3 & Quy Tắc Nghiệp Vụ](be_docs/business_logic_and_validation_rules.md):** Thuật toán tính tiền, FSM trạng thái đơn hàng, FSM đặt bàn, xử lý giỏ hàng không dùng ID tự tăng.
-4. **[Đặc Tả Cơ Sở Dữ Liệu & Eloquent Mapping](be_docs/glossary_and_laravel_eloquent_mapping.md):** 12 Models Eloquent, bảng quan hệ nhiều - nhiều, Backed Enums, cách xử lý 6 bẫy lỗi mapping DB.
-5. **[Nhật Ký Quyết Định Kiến Trúc (ADRs)](be_docs/memory/architectural-decisions.md):** Toàn bộ lịch sử quyết định kiến trúc từ ADR-001 đến ADR-021.
-6. **[Bài Học Kinh Nghiệm (Lessons Learned)](be_docs/memory/lessons-learned.md):** Sổ tay xử lý sự cố môi trường và cạm bẫy kỹ thuật.
+1. **[Mục Lục Tài Liệu Trung Tâm](be_docs/README.md):** Bản đồ điều hướng tài liệu toàn hệ thống.
+2. **[Đặc tả Mã Lỗi & Response Envelopes](be_docs/api_protocol_specification.md):** Cấu trúc JSON chuẩn, HTTP status codes, mã lỗi nghiệp vụ, hướng dẫn header từ Client.
+3. **[Đặc Tả Nghiệp Vụ Từng Module (Use Cases)](be_docs/modules/):** Thuật toán tính tiền, FSM trạng thái đơn hàng, FSM đặt bàn, xử lý giỏ hàng và 63 Use Cases chi tiết.
+4. **[Bản Đồ Module & Tiến Độ Dự Án](be_docs/modules.md):** Danh mục các module, phân rã danh sách API, trạng thái đã làm xong / đang làm / chưa làm.
+5. **[Đặc Tả Cơ Sở Dữ Liệu & Eloquent Mapping](be_docs/glossary_and_laravel_eloquent_mapping.md):** 12 Models Eloquent, bảng quan hệ nhiều - nhiều, Backed Enums, cách xử lý 6 bẫy lỗi mapping DB.
+6. **[Nhật Ký Quyết Định Kiến Trúc (ADRs)](be_docs/memory/architectural-decisions.md):** Toàn bộ lịch sử quyết định kiến trúc từ ADR-001 đến ADR-024.
+7. **[Bài Học Kinh Nghiệm (Lessons Learned)](be_docs/memory/lessons-learned.md):** Sổ tay xử lý sự cố môi trường và cạm bẫy kỹ thuật.

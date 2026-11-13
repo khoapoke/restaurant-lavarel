@@ -1,6 +1,7 @@
-# 🧭 BẢN ĐỒ MODULE & TIẾN ĐỘ DỰ ÁN (MODULE ARCHITECTURE & STATUS TRACKER)
+# 🧭 BẢN ĐỒ TIẾN ĐỘ & RADAR KIẾN TRÚC HỆ THỐNG (MODULE STATUS TRACKER)
 
-> **Mục đích:** Quản lý danh mục các Module nghiệp vụ trong hệ thống, chi tiết các API & tính năng thuộc từng module, đồng thời theo dõi trạng thái tiến độ triển khai theo quy ước ký hiệu.
+> **Mục đích:** Theo dõi tiến độ triển khai API và vòng đời các Module nghiệp vụ trong hệ thống theo quy ước ký hiệu.  
+> **Đặc tả chi tiết:** Toàn bộ Use Cases, Domain Rules, luồng thực thi và thuật toán chuyên sâu được lưu trữ tại [be_docs/modules/](modules/).
 > 
 > **Quy ước Ký hiệu Trạng thái:**
 > - `X`: Đã hoàn thành (Completed / Done)
@@ -21,36 +22,25 @@
 
 ## 📋 2. Bảng Tổng Hợp Tiến Độ Các Module (Executive Summary)
 
-| STT | Tên Module | Phạm vi nghiệp vụ | Số lượng API | Trạng thái Logic | Trạng thái Refactor Folder | Ghi chú kỹ thuật nổi bật |
-| :---: | :--- | :--- | :---: | :---: | :---: | :--- |
-| **1** | **`Auth`** | Tài khoản, Hồ sơ, Phân quyền | 11 APIs | `X` | `X` | Auto-Upgrade BCrypt, Sanctum Token, RBAC |
-| **2** | **`Menu`** | Danh mục, Món ăn, Gợi ý | 14 APIs | `X` | `X` | In-Memory Redis Cache, OpenWeatherMap API |
-| **3** | **`Cart`** | Giỏ hàng khách hàng | 5 APIs | `X` | `X` | Bảng liên kết Pivot nhiều-nhiều |
-| **4** | **`Order`** | Đặt hàng, Xử lý trạng thái FSM | 7 APIs | `X` | `X` | Redis Distributed Lock, Snapshot đơn giá |
-| **5** | **`Reservation`** | Quản lý bàn & Đặt bàn | 11 APIs | `X` | `X` | Redis Distributed Lock, Kiểm tra trùng giờ $\pm 119'$ |
-| **6** | **`Payment`** | Thanh toán, VietQR, Webhook | 6 APIs | `X` | `X` | VietQR Napas 247, Webhook đối soát |
-| **7** | **`Report`** | Báo cáo & Dashboard Admin | 5 APIs | `X` | `X` | Tổng hợp Aggregates SQL hiệu năng cao |
-| **8** | **`Core` / `Shared`** | Enums, Middlewares, Exceptions | Hệ thống | `X` | `X` | Unified JSON Envelope, Exception Shielding |
+| STT | Tên Module | Phạm vi nghiệp vụ | Số lượng API | Chi tiết đặc tả | Trạng thái Logic | Trạng thái Folder | Ghi chú kỹ thuật nổi bật |
+| :---: | :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **1** | **`Auth`** | Tài khoản, Hồ sơ, Phân quyền | 11 APIs | [auth.md](modules/auth.md) | `X` | `X` | Auto-Upgrade BCrypt, Sanctum Token, RBAC |
+| **2** | **`Menu`** | Danh mục, Món ăn, Gợi ý | 14 APIs | [menu.md](modules/menu.md) | `X` | `X` | In-Memory Redis Cache, OpenWeatherMap API |
+| **3** | **`Cart`** | Giỏ hàng khách hàng | 5 APIs | [cart.md](modules/cart.md) | `X` | `X` | Bảng liên kết Pivot nhiều-nhiều |
+| **4** | **`Order`** | Đặt hàng, Xử lý trạng thái FSM | 7 APIs | [order.md](modules/order.md) | `X` | `X` | Redis Distributed Lock, Snapshot đơn giá |
+| **5** | **`Reservation`** | Quản lý bàn & Đặt bàn | 11 APIs | [reservation.md](modules/reservation.md) | `X` | `X` | Redis Distributed Lock, Kiểm tra trùng giờ $\pm 119'$ |
+| **6** | **`Payment`** | Thanh toán, VietQR, Webhook | 6 APIs | [payment.md](modules/payment.md) | `X` | `X` | VietQR Napas 247, Webhook đối soát |
+| **7** | **`Report`** | Báo cáo & Dashboard Admin | 5 APIs | [report.md](modules/report.md) | `X` | `X` | Tổng hợp Aggregates SQL hiệu năng cao |
+| **8** | **`Recommendation`** | Gợi ý đồ thị Neo4j | 3 APIs | [recommendation.md](modules/recommendation.md) | `X` | `X` | Market Basket Analysis & Graph Filtering |
+| **9** | **`Core` / `Shared`** | Enums, Middlewares, Exceptions | Hạ tầng | (Xem mục 4 bên dưới) | `X` | `X` | Unified JSON Envelope, Exception Shielding |
 
 *Tổng số API Endpoint đã hoàn thành và kiểm thử:* **59 APIs**
 
 ---
 
-## 🔍 3. Chi Tiết Từng Module Nghiệp Vụ
+## 🔍 3. Checklist Tiến Độ Từng Module Nghiệp Vụ
 
----
-
-### 🛡️ MODULE 1: AUTH (Xác Thực, Tài Khoản & Phân Quyền)
-- **Vị trí thư mục:** `app/Modules/Auth/`
-- **Trách nhiệm:** Quản lý vòng đời tài khoản, hồ sơ cá nhân khách hàng/nhân viên, cấp và thu hồi token Sanctum, phân quyền theo vai trò (`ADMIN`, `STAFF`, `CUSTOMER`).
-- **Thành phần kỹ thuật:**
-  - **Models:** `Account` (`TAI_KHOAN`), `UserProfile` (`NGUOI_DUNG`), `Role` (`VAI_TRO`).
-  - **Services:** `AuthService`, `Customer\ProfileService`, `Admin\AccountService`.
-  - **Controllers:** `AuthController`, `Customer\ProfileController`, `Admin\AccountController`.
-  - **Requests:** `RegisterRequest`, `LoginRequest`, `Customer\UpdateProfileRequest`.
-  - **Resources:** `AccountResource`, `UserProfileResource`, `Customer\CustomerProfileResource`, `Admin\AdminAccountResource`.
-  - **Routes:** `app/Modules/Auth/Routes/api.php`.
-- **Danh sách API Endpoints:**
+### 🛡️ MODULE 1: AUTH (Xác Thực, Tài Khoản & Phân Quyền) – [`be_docs/modules/auth.md`](modules/auth.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -68,18 +58,7 @@
 
 ---
 
-### 🥗 MODULE 2: MENU (Thực Đơn, Danh Mục & Món Ăn)
-- **Vị trí thư mục:** `app/Modules/Menu/`
-- **Trách nhiệm:** Quản lý danh mục món ăn, chi tiết món, bộ lọc theo giá/dị ứng, gợi ý món ăn thông minh theo thời tiết và kiểm soát hiển thị/xóa mềm.
-- **Thành phần kỹ thuật:**
-  - **Models:** `Category` (`DANH_MUC`), `Dish` (`MON_AN`).
-  - **Services:** `Customer\MenuService`, `Admin\CategoryService`, `Admin\DishService`.
-  - **Controllers:** `Customer\MenuController`, `Admin\CategoryController`, `Admin\DishController`.
-  - **Requests:** `Customer\WeatherRecommendationRequest`, `Admin\CreateCategoryRequest`, `Admin\UpdateCategoryRequest`, `Admin\ToggleCategoryVisibilityRequest`, `Admin\CreateDishRequest`, `Admin\UpdateDishRequest`, `Admin\ToggleDishAvailabilityRequest`, `Admin\ToggleDishVisibilityRequest`.
-  - **Resources:** `Customer\CategoryResource`, `Customer\DishResource`, `Customer\DishDetailResource`, `Admin\AdminCategoryResource`, `Admin\AdminDishResource`.
-  - **Routes:** `app/Modules/Menu/Routes/api.php`.
-  - **Đặc biệt:** Tích hợp **Redis Caching** (`menu:categories:active` thời gian 3600s, `weather_rec_*` 900s) và Cache Busting tự động khi Admin sửa dữ liệu.
-- **Danh sách API Endpoints:**
+### 🥗 MODULE 2: MENU (Thực Đơn, Danh Mục & Món Ăn) – [`be_docs/modules/menu.md`](modules/menu.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -100,17 +79,7 @@
 
 ---
 
-### 🛒 MODULE 3: CART (Giỏ Hàng Mua Sắm)
-- **Vị trí thư mục:** `app/Modules/Cart/`
-- **Trách nhiệm:** Quản lý giỏ hàng mua sắm 1-1 với tài khoản khách hàng, thêm/sửa/xóa món ăn trong giỏ.
-- **Thành phần kỹ thuật:**
-  - **Models:** `Cart` (`GIO_HANG`), `CartItem` (`MON_AN_GIO_HANG` - bảng pivot quan hệ nhiều-nhiều).
-  - **Services:** `Customer\CartService`.
-  - **Controllers:** `Customer\CartController`.
-  - **Requests:** `Customer\AddCartItemRequest`, `Customer\UpdateCartItemRequest`.
-  - **Resources:** `Customer\CartResource`, `Customer\CartItemResource`.
-  - **Routes:** `app/Modules/Cart/Routes/api.php`.
-- **Danh sách API Endpoints:**
+### 🛒 MODULE 3: CART (Giỏ Hàng Mua Sắm) – [`be_docs/modules/cart.md`](modules/cart.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -122,18 +91,7 @@
 
 ---
 
-### 📦 MODULE 4: ORDER (Đơn Hàng & Vận Hành Bếp)
-- **Vị trí thư mục:** `app/Modules/Order/`
-- **Trách nhiệm:** Chuyển đổi giỏ hàng thành đơn hàng chính thức (Checkout), lưu vết snapshot đơn giá, quản lý vòng đời trạng thái đơn hàng (FSM: Chờ xác nhận $\rightarrow$ Đang nấu $\rightarrow$ Đang giao $\rightarrow$ Hoàn tất / Đã hủy).
-- **Thành phần kỹ thuật:**
-  - **Models:** `Order` (`DON_HANG`), `OrderItem` (`CHI_TIET_DON_HANG`).
-  - **Services:** `Customer\OrderService`, `Admin\OrderService`.
-  - **Controllers:** `Customer\OrderController`, `Admin\OrderController`.
-  - **Requests:** `Customer\CheckoutOrderRequest`, `Customer\CancelOrderRequest`, `Admin\AdminCancelOrderRequest`, `Admin\UpdateOrderStatusRequest`.
-  - **Resources:** `Customer\OrderResource`, `Customer\OrderItemResource`, `Customer\OrderPaymentResource`, `Admin\AdminOrderResource`.
-  - **Routes:** `app/Modules/Order/Routes/api.php`.
-  - **Đặc biệt:** Sử dụng **Redis Distributed Lock** `lock:order:checkout:{accountId}` trong 10 giây chống double-click checkout.
-- **Danh sách API Endpoints:**
+### 📦 MODULE 4: ORDER (Đơn Hàng & Vận Hành Bếp) – [`be_docs/modules/order.md`](modules/order.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -147,18 +105,7 @@
 
 ---
 
-### 🪑 MODULE 5: RESERVATION (Bàn Ăn & Đặt Bàn Trước)
-- **Vị trí thư mục:** `app/Modules/Reservation/`
-- **Trách nhiệm:** Quản lý danh mục bàn ăn, tìm bàn trống theo sức chứa và thời gian, tạo lượt đặt bàn, xử lý xung đột khung giờ $\pm 119$ phút, đồng bộ trạng thái bàn ăn (`TRONG`, `DA_DAT`, `DANG_SU_DUNG`, `BAO_TRI`).
-- **Thành phần kỹ thuật:**
-  - **Models:** `DiningTable` (`BAN_AN`), `Reservation` (`DAT_BAN`).
-  - **Services:** `Customer\ReservationService`, `Admin\TableService`, `Admin\ReservationService`.
-  - **Controllers:** `Customer\ReservationController`, `Admin\TableController`, `Admin\ReservationController`.
-  - **Requests:** `Customer\FindAvailableTablesRequest`, `Customer\CreateReservationRequest`, `Customer\UpdateReservationRequest`, `Admin\CreateTableRequest`, `Admin\UpdateTableRequest`, `Admin\UpdateTimeSlotsRequest`, `Admin\UpdateReservationStatusRequest`.
-  - **Resources:** `Customer\TableResource`, `Customer\ReservationResource`, `Admin\AdminTableResource`, `Admin\AdminReservationResource`.
-  - **Routes:** `app/Modules/Reservation/Routes/api.php`.
-  - **Đặc biệt:** Tích hợp **Redis Distributed Lock** `lock:reservation:table:{tableId}` trong 5 giây chống đặt trùng bàn cùng một thời điểm.
-- **Danh sách API Endpoints:**
+### 🪑 MODULE 5: RESERVATION (Bàn Ăn & Đặt Bàn Trước) – [`be_docs/modules/reservation.md`](modules/reservation.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -176,17 +123,7 @@
 
 ---
 
-### 💳 MODULE 6: PAYMENT (Thanh Toán & Đối Soát Giao Dịch)
-- **Vị trí thư mục:** `app/Modules/Payment/`
-- **Trách nhiệm:** Khởi tạo giao dịch thanh toán quan hệ 1-1 với đơn hàng, sinh mã thanh toán VietQR động chuẩn Napas 247, kiểm tra trạng thái thanh toán và webhook cập nhật tự động.
-- **Thành phần kỹ thuật:**
-  - **Models:** `Payment` (`THANH_TOAN`).
-  - **Services:** `Customer\PaymentService`, `Admin\PaymentService`.
-  - **Controllers:** `Customer\PaymentController`, `Admin\PaymentController`.
-  - **Requests:** `Admin\ReconcilePaymentRequest`, `Admin\RefundPaymentRequest`.
-  - **Resources:** `Admin\AdminPaymentResource`, `Admin\CallbackLogResource`.
-  - **Routes:** `app/Modules/Payment/Routes/api.php`.
-- **Danh sách API Endpoints:**
+### 💳 MODULE 6: PAYMENT (Thanh Toán & Đối Soát Giao Dịch) – [`be_docs/modules/payment.md`](modules/payment.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -199,15 +136,7 @@
 
 ---
 
-### 📈 MODULE 7: REPORT (Báo Cáo Thống Kê & Phân Tích)
-- **Vị trí thư mục:** `app/Modules/Report/`
-- **Trách nhiệm:** Tổng hợp dữ liệu kinh doanh đa chiều, phân tích doanh thu theo ngày, thống kê số lượng đơn và tỷ lệ hoàn thành, danh sách món ăn bán chạy nhất, tỷ lệ lấp đầy bàn ăn.
-- **Thành phần kỹ thuật:**
-  - **Services:** `Admin\ReportService`.
-  - **Controllers:** `Admin\ReportController`.
-  - **Requests:** `Admin\DashboardReportRequest`.
-  - **Routes:** `app/Modules/Report/Routes/api.php`.
-- **Danh sách API Endpoints:**
+### 📈 MODULE 7: REPORT (Báo Cáo Thống Kê & Phân Tích) – [`be_docs/modules/report.md`](modules/report.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -219,15 +148,7 @@
 
 ---
 
-### 🕸️ MODULE 8: RECOMMENDATION (Động Cơ Gợi Ý Đồ Thị Tri Thức Neo4j)
-- **Vị trí thư mục:** `app/Modules/Recommendation/`
-- **Trách nhiệm:** Quản lý kết nối đồ thị Bolt Neo4j, đồng bộ dữ liệu quan hệ khách hàng - đơn hàng - món ăn, thực hiện thuật toán Market Basket Analysis (gợi ý món gọi kèm) và Collaborative Filtering (gợi ý cá nhân hóa).
-- **Thành phần kỹ thuật:**
-  - **Services:** `Neo4jClientService`, `DishRecommendationService`.
-  - **Controllers:** `Customer\RecommendationController`.
-  - **Commands:** `SyncGraphDataCommand` (`php artisan neo4j:sync`).
-  - **Routes:** `app/Modules/Recommendation/Routes/api.php`.
-- **Danh sách API Endpoints:**
+### 🕸️ MODULE 8: RECOMMENDATION (Động Cơ Gợi Ý Đồ Thị Tri Thức Neo4j) – [`be_docs/modules/recommendation.md`](modules/recommendation.md)
 
 | Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
 | :---: | :---: | :--- | :--- | :---: |
@@ -237,12 +158,13 @@
 
 ---
 
-### 🧩 MODULE 9: CORE / SHARED (Nền Tảng Dùng Chung)
+## 🧩 4. MODULE 9: CORE / SHARED (Nền Tảng Dùng Chung Toàn Hệ Thống)
+
 - **Vị trí thư mục:** `app/Modules/Core/`
 - **Trách nhiệm:** Chứa toàn bộ các thành phần hạ tầng chung mà các module khác phụ thuộc vào:
   - **Base Controller:** `BaseController` (kế thừa `Controller`, tích hợp `ApiResponse`).
   - **Trait:** `ApiResponse` (chuẩn hóa Envelope phản hồi JSON: `success`, `code`, `message`, `data`/`errors`).
-  - **Backed Enums:** `RoleType`, `AccountStatus`, `OrderStatus`, `TableStatus`, `ReservationStatus`, `PaymentMethod`, `PaymentStatus`.
+  - **7 Backed Enums:** `RoleType`, `AccountStatus`, `OrderStatus`, `TableStatus`, `ReservationStatus`, `PaymentMethod`, `PaymentStatus`.
   - **Middlewares:** `ForceJsonResponse`, `CheckAccountActive`, `CheckRole`.
   - **Exceptions:** Global Exception Shielding trong `bootstrap/app.php`.
   - **Database Migrations & Seeders:** 12 bảng cốt lõi và `RestaurantSeeder` tại `database/`.

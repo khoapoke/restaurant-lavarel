@@ -10,14 +10,14 @@
 
 | STT | Tên Module | File Đặc Tả Chi Tiết | Phạm vi nghiệp vụ |
 | :---: | :--- | :--- | :--- |
-| **1** | **`Auth`** | [`auth.md`](auth.md) | Đăng ký, Đăng nhập, Hồ sơ cá nhân, Quản lý tài khoản Admin |
-| **2** | **`Menu`** | [`menu.md`](menu.md) | Danh mục món, Danh sách món ăn, Lọc & Gợi ý thời tiết, Quản trị thực đơn |
-| **3** | **`Cart`** | [`cart.md`](cart.md) | Xem giỏ hàng, Thêm/Sửa/Xóa món ăn trong giỏ hàng |
-| **4** | **`Order`** | [`order.md`](order.md) | Checkout tạo đơn, Hủy đơn, Lịch sử đơn hàng, FSM chuyển trạng thái bếp |
-| **5** | **`Reservation`** | [`reservation.md`](reservation.md) | Tra cứu bàn trống, Đặt bàn, Sửa/Hủy bàn, Quản lý bàn ăn Admin |
-| **6** | **`Payment`** | [`payment.md`](payment.md) | Sinh mã VietQR, Đối soát giao dịch, Hoàn tiền, Webhook biến động số dư |
-| **7** | **`Report`** | [`report.md`](report.md) | Dashboard tổng quan, Báo cáo Doanh thu, Đơn hàng, Món bán chạy, Lấp đầy bàn |
-| **8** | **`Recommendation`** | [`recommendation.md`](recommendation.md) | Gợi ý món bán kèm (Cross-sell / Market Basket Analysis) & Cá nhân hóa (Collaborative Filtering) qua Đồ thị Neo4j |
+| **1** | **`Auth`** | [`modules/auth.md`](modules/auth.md) | Đăng ký, Đăng nhập, Hồ sơ cá nhân, Quản lý tài khoản Admin |
+| **2** | **`Menu`** | [`modules/menu.md`](modules/menu.md) | Danh mục món, Danh sách món ăn, Lọc & Gợi ý thời tiết, Quản trị thực đơn |
+| **3** | **`Cart`** | [`modules/cart.md`](modules/cart.md) | Xem giỏ hàng, Thêm/Sửa/Xóa món ăn trong giỏ hàng |
+| **4** | **`Order`** | [`modules/order.md`](modules/order.md) | Checkout tạo đơn, Hủy đơn, Lịch sử đơn hàng, FSM chuyển trạng thái bếp |
+| **5** | **`Reservation`** | [`modules/reservation.md`](modules/reservation.md) | Tra cứu bàn trống, Đặt bàn, Sửa/Hủy bàn, Quản lý bàn ăn Admin |
+| **6** | **`Payment`** | [`modules/payment.md`](modules/payment.md) | Sinh mã VietQR, Đối soát giao dịch, Hoàn tiền, Webhook biến động số dư |
+| **7** | **`Report`** | [`modules/report.md`](modules/report.md) | Dashboard tổng quan, Báo cáo Doanh thu, Đơn hàng, Món bán chạy, Lấp đầy bàn |
+| **8** | **`Recommendation`** | [`modules/recommendation.md`](modules/recommendation.md) | Gợi ý món bán kèm (Cross-sell / Market Basket Analysis) & Cá nhân hóa (Collaborative Filtering) qua Đồ thị Neo4j |
 
 ---
 
