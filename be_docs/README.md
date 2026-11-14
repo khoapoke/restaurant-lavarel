@@ -13,7 +13,7 @@ Mỗi module sở hữu một tài liệu đặc tả độc lập chuẩn Softw
 | STT | Module | Tệp đặc tả chi tiết | Số lượng API | Các tính năng & quy tắc kỹ thuật trọng tâm |
 | :---: | :--- | :--- | :---: | :--- |
 | **1** | **`Auth`** | [auth.md](modules/auth.md) | 11 APIs | Đăng ký, Đăng nhập, Hồ sơ cá nhân, Quản trị tài khoản, Auto-upgrade BCrypt, Rule `AUTH-LOCK`. |
-| **2** | **`Menu`** | [menu.md](modules/menu.md) | 14 APIs | Danh mục & Món ăn, Redis Caching (`menu:categories:active`), Gợi ý món ăn theo thời tiết thực tế, Xóa mềm. |
+| **2** | **`Menu`** | [menu.md](modules/menu.md) | 14 APIs | Danh mục & Món ăn, Redis Caching (`menu:categories:active`), Meilisearch Typo-Tolerance, Gợi ý món ăn theo thời tiết thực tế, Xóa mềm. |
 | **3** | **`Cart`** | [cart.md](modules/cart.md) | 5 APIs | Giỏ hàng 1-1 với tài khoản, Bảng pivot `MON_AN_GIO_HANG` không có ID tự tăng, kỹ thuật `attach`/`updateExistingPivot`. |
 | **4** | **`Order`** | [order.md](modules/order.md) | 7 APIs | Checkout giỏ hàng, Redis Distributed Lock 10s, Snapshot đơn giá, FSM 5 trạng thái đơn hàng, Đồng bộ trạng thái thanh toán. |
 | **5** | **`Reservation`** | [reservation.md](modules/reservation.md) | 11 APIs | Tìm bàn trống, Đặt bàn trước, Redis Lock 5s, Kiểm tra xung đột khung giờ $\pm 119$ phút, Đồng bộ trạng thái bàn ăn. |

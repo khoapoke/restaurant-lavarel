@@ -9,7 +9,7 @@
 ## 1. Tổng quan & Trách nhiệm
 
 Module **Menu** là trung tâm quản lý thực đơn của hệ thống nhà hàng:
-- **Phía Khách hàng:** Lấy danh sách danh mục (Redis Cache), duyệt và tìm kiếm món ăn phân trang (lọc theo giá, dị ứng, danh mục), xem chi tiết món, nhận gợi ý món ăn theo thời tiết thực tế (OpenWeatherMap + lọc dị ứng).
+- **Phía Khách hàng:** Lấy danh sách danh mục (Redis Cache), duyệt và tìm kiếm món ăn phân trang (kết hợp động cơ **Meilisearch** chịu lỗi chính tả và tìm không dấu, bộ lọc giá, dị ứng, danh mục), xem chi tiết món, nhận gợi ý món ăn theo thời tiết thực tế (OpenWeatherMap + lọc dị ứng).
 - **Phía Quản trị:** Quản lý CRUD Danh mục và Món ăn, ẩn/hiện, xóa mềm bảo toàn toàn vẹn đơn hàng và cơ chế xóa bộ nhớ đệm tự động (Cache Busting).
 
 ---
@@ -18,8 +18,8 @@ Module **Menu** là trung tâm quản lý thực đơn của hệ thống nhà h
 
 | Thành phần | Lớp / Đường dẫn thực tế | Trách nhiệm |
 | :--- | :--- | :--- |
-| **Models** | `Category` (`DANH_MUC`)<br>`Dish` (`MON_AN`) | Danh mục món ăn và chi tiết món ăn (cột `da_xoa`, `hien_thi`, `chat_di_ung`, `the_thoi_tiet`). |
-| **Services** | `Customer\MenuService`<br>`Admin\CategoryService`<br>`Admin\DishService` | Truy vấn thực đơn, lọc thời tiết, CRUD danh mục/món ăn, xóa mềm và Cache Busting. |
+| **Models** | `Category` (`DANH_MUC`)<br>`Dish` (`MON_AN`) | Danh mục món ăn và chi tiết món ăn (tích hợp trait `Laravel\Scout\Searchable`, schema `toSearchableArray()`, index `dishes`). |
+| **Services** | `Customer\MenuService`<br>`Admin\CategoryService`<br>`Admin\DishService` | Truy vấn thực đơn, tìm kiếm Meilisearch kèm Fallback MySQL `LIKE`, lọc thời tiết, CRUD danh mục/món ăn, xóa mềm và Cache Busting. |
 | **Controllers** | `Customer\MenuController`<br>`Admin\CategoryController`<br>`Admin\DishController` | Tiếp nhận request và trả về chuẩn `ApiResponse`. |
 | **FormRequests** | `Customer\WeatherRecommendationRequest`<br>`Admin\CreateCategoryRequest`<br>`Admin\CreateDishRequest`, `UpdateDishRequest`... | Kiểm thực dữ liệu đầu vào. |
 | **Resources** | `CategoryResource`, `AdminCategoryResource`<br>`DishResource`, `DishDetailResource`, `AdminDishResource` | Chuẩn hóa dữ liệu JSON đầu ra cho Frontend. |
@@ -37,6 +37,11 @@ Module **Menu** là trung tâm quản lý thực đơn của hệ thống nhà h
 - **TUYỆT ĐỐI KHÔNG** gọi lệnh xóa vật lý `$dish->delete()`. Vi phạm ràng buộc khóa ngoại trong `CHI_TIET_DON_HANG`.
 - **Luật Xóa mềm:** Luôn cập nhật cờ `$dish->update(['da_xoa' => true, 'hien_thi' => false])`.
 - Khi xóa mềm danh mục: Tự động ẩn toàn bộ món thuộc danh mục đó.
+
+### 3.3. Động Cơ Tìm Kiếm Meilisearch (Typo-Tolerance & Graceful Fallback)
+- **Động cơ tìm kiếm:** `Dish::search($keyword)` qua Meilisearch 1.7 (Port 7700) sử dụng Laravel Scout.
+- **Typo-Tolerance:** Cấu hình `minWordSizeForTypos: { oneTypo: 3, twoTypos: 7 }` hỗ trợ tìm kiếm chịu lỗi chính tả (gõ `tra daoo` $\rightarrow$ ra `Trà đào cam sả`, `phoo bo` $\rightarrow$ ra `Phở bò đặc biệt`) và tiếng Việt không dấu (`com tam`, `che khuc bach`).
+- **Graceful Fallback:** Được bọc trong khối `try ... catch (\Throwable $e)`. Nếu Meilisearch ngoại tuyến, tự động fallback về truy vấn SQL `LIKE '%keyword%'` trên MySQL mà không làm chết request.
 
 ---
 
@@ -95,8 +100,9 @@ Module **Menu** là trung tâm quản lý thực đơn của hệ thống nhà h
 ### 5.2. Nhóm API Món Ăn (Dish Endpoints)
 | Mã API | Method | Endpoint URL | Phân quyền | Body / Query Request | Response Payload | Mã HTTP |
 | :---: | :---: | :--- | :---: | :--- | :--- | :---: |
-| `MNU-02` | `GET` | `/api/v1/customer/dishes` | Public | Query: `page`, `perPage`, `categoryId` | Paginated `[DishResource]` | `200` |
-| `MNU-03` | `GET` | `/api/v1/customer/dishes/search` | Public | Query: `q`, `minPrice`, `maxPrice`, `excludeAllergens[]` | Paginated `[DishResource]` | `200` |
+| `MNU-02` | `GET` | `/api/v1/customer/dishes` | Public | Query: `keyword` (hoặc `q`), `categoryId`, `minPrice`, `maxPrice`, `isAvailable`, `excludeAllergens`, `page`, `perPage` | Paginated `[DishResource]` (Tìm kiếm Meilisearch) | `200` |
+| `MNU-03` | `GET` | `/api/v1/customer/dishes/search` | Public | Query: `keyword` (hoặc `q`), `minPrice`, `maxPrice`, `excludeAllergens` | Paginated `[DishResource]` (Tìm kiếm Meilisearch) | `200` |
+| `MNU-04` | `GET` | `/api/v1/customer/dishes/recommendations/weather` | Public | Query: `lat`, `lon` | Gợi ý món ăn theo thời tiết thực tế *(Xem chi tiết tại Mục 6)* | `200 / 422` |
 | `MNU-07` | `GET` | `/api/v1/customer/dishes/{id}` | Public | *(Không)* | `DishDetailResource` (Schema 4.3) | `200 / 404` |
 | `MNU-08` | `GET` | `/api/v1/admin/dishes` | `ADMIN` | Query: `page`, `search`, `categoryId`, `includeDeleted` | Paginated `[AdminDishResource]` | `200` |
 | `MNU-13` | `POST` | `/api/v1/admin/dishes` | `ADMIN` | `{ "dishName", "price", "categoryId", "description"?, "imageUrl"?, "allergens"?, "weatherTags"? }` | `201`: `DishDetailResource` mới tạo | `201 / 422` |

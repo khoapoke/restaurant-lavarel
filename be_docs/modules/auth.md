@@ -91,6 +91,8 @@ Model `Account` luôn bật thuộc tính `protected $hidden = ['mat_khau'];`. 1
 
 | Mã API | Method | Endpoint URL | Phân quyền | Body Request | Response Payload | Mã HTTP |
 | :---: | :---: | :--- | :---: | :--- | :--- | :---: |
+| `USR-01` | `POST` | `/api/v1/auth/register` | Public | `{ "username", "password", "passwordConfirmation", "email", "fullName", "phoneNumber" }` | `201`: `AccountResource` + Token *(Chi tiết Use Case tại Mục 6)* | `201 / 422` |
+| `USR-02` | `POST` | `/api/v1/auth/login` | Public | `{ "username", "password", "rememberMe"? }` | `200`: `AccountResource` + Token *(Chi tiết Use Case tại Mục 6)* | `200 / 401 / 403` |
 | `USR-03` | `POST` | `/api/v1/auth/logout` | `auth:sanctum` | *(Không)* | `{ "message": "Logged out successfully" }` | `200` |
 | `USR-04` | `GET` | `/api/v1/customer/profile` | `CUSTOMER` | *(Không)* | `UserProfileResource` (Schema 4.1) | `200` |
 | `USR-05` | `PUT` | `/api/v1/customer/profile` | `CUSTOMER` | `{ "fullName", "phoneNumber", "birthDate", "savedAddresses", "allergies", "dietaryPreferences" }` | `UserProfileResource` đã cập nhật | `200` |
@@ -99,6 +101,7 @@ Model `Account` luôn bật thuộc tính `protected $hidden = ['mat_khau'];`. 1
 | `ADM-02` | `GET` | `/api/v1/admin/accounts/{id}` | `ADMIN` | *(Không)* | `AdminAccountResource` (Schema 4.2) | `200 / 404` |
 | `ADM-03` | `POST` | `/api/v1/admin/accounts/staff` | `ADMIN` | `{ "username", "password", "password_confirmation", "fullName", "phoneNumber", "birthDate"? }` | `201`: `AdminAccountResource` nhân viên mới | `201 / 422` |
 | `ADM-04` | `PUT` | `/api/v1/admin/accounts/{id}` | `ADMIN` | `{ "fullName"?, "phoneNumber"?, "birthDate"? }` | `AdminAccountResource` đã sửa | `200 / 404` |
+| `ADM-05` | `PATCH`| `/api/v1/admin/accounts/{id}/status` | `ADMIN` | `{ "status": "ACTIVE|LOCKED" }` | Khóa/Mở khóa tài khoản & Thu hồi Token *(Chi tiết tại Mục 6)* | `200 / 400` |
 
 ---
 

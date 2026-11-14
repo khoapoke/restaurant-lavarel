@@ -90,12 +90,16 @@ $isBusy = Reservation::where('ma_ban', $tableId)
 | Mã API | Method | Endpoint URL | Phân quyền | Body / Query Request | Response Payload | Mã HTTP |
 | :---: | :---: | :--- | :---: | :--- | :--- | :---: |
 | `BKG-01` | `GET` | `/api/v1/customer/reservations/available-tables` | Public | Query: `date`, `time`, `guestCount` | Danh sách `[TableResource]` | `200 / 422` |
+| `BKG-02` | `POST` | `/api/v1/customer/reservations` | `CUSTOMER` | `{ "tableId", "reservationTime", "guestCount", "note"? }` | `201`: `ReservationResource` *(Chi tiết tại Mục 6)* | `201 / 400 / 409` |
+| `BKG-03` | `PUT` | `/api/v1/customer/reservations/{id}` | `CUSTOMER` | `{ "tableId"?, "reservationTime"?, "guestCount"?, "note"? }` | `ReservationResource` đã sửa *(Quy tắc 60' tại Mục 6)* | `200 / 409` |
+| `BKG-04` | `PUT` | `/api/v1/customer/reservations/{id}/cancel` | `CUSTOMER` | *(Không)* | `{ "message": "Reservation cancelled" }` *(Quy tắc 60' tại Mục 6)* | `200 / 409` |
 | `BKG-05` | `GET` | `/api/v1/customer/reservations` | `CUSTOMER` | Query: `page`, `status` | Paginated `[ReservationResource]` | `200` |
 | `BKG-06` | `GET` | `/api/v1/customer/reservations/{id}` | `CUSTOMER` | *(Không)* | `ReservationResource` (Schema 4.2) | `200 / 404` |
 | `BKG-07` | `GET` | `/api/v1/admin/tables` | `ADMIN` | Query: `status` | Danh sách `[AdminTableResource]` | `200` |
 | `BKG-08` | `PATCH`| `/api/v1/admin/tables/{id}/status` | `ADMIN` | `{ "status": "AVAILABLE|MAINTENANCE" }` | Cập nhật trạng thái bàn ăn | `200 / 404` |
 | `BKG-09` | `GET` | `/api/v1/admin/reservations` | `ADMIN` | Query: `page`, `date`, `status` | Paginated `[AdminReservationResource]` | `200` |
 | `BKG-10` | `GET` | `/api/v1/admin/reservations/{id}` | `ADMIN` | *(Không)* | `AdminReservationResource` | `200 / 404` |
+| `BKG-11` | `PATCH`| `/api/v1/admin/reservations/{id}/status` | `ADMIN` | `{ "targetStatus": string }` | Duyệt / Đồng bộ trạng thái bàn *(Chi tiết tại Mục 6)* | `200 / 400` |
 
 ---
 

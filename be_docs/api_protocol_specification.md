@@ -90,31 +90,27 @@ Authorization: Bearer <sanctum_access_token>
   "success": true,
   "code": 200,
   "message": "Orders retrieved successfully",
-  "data": [
-    {
-      "orderId": 101,
-      "orderDate": "2026-11-09 19:15:00",
-      "totalAmount": 250000,
-      "status": "COMPLETED"
-    },
-    {
-      "orderId": 102,
-      "orderDate": "2026-11-10 11:45:00",
-      "totalAmount": 180000,
-      "status": "DELIVERING"
+  "data": {
+    "items": [
+      {
+        "orderId": 101,
+        "orderDate": "2026-11-09 19:15:00",
+        "totalAmount": 250000,
+        "status": "COMPLETED"
+      },
+      {
+        "orderId": 102,
+        "orderDate": "2026-11-10 11:45:00",
+        "totalAmount": 180000,
+        "status": "DELIVERING"
+      }
+    ],
+    "pagination": {
+      "currentPage": 1,
+      "perPage": 10,
+      "totalItems": 35,
+      "lastPage": 4
     }
-  ],
-  "meta": {
-    "currentPage": 1,
-    "perPage": 10,
-    "total": 35,
-    "lastPage": 4
-  },
-  "links": {
-    "first": "http://localhost:8000/api/v1/customer/orders?page=1",
-    "last": "http://localhost:8000/api/v1/customer/orders?page=4",
-    "prev": null,
-    "next": "http://localhost:8000/api/v1/customer/orders?page=2"
   }
 }
 ```

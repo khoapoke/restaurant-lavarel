@@ -19,10 +19,18 @@ Mọi Controller API kế thừa `BaseController` và sử dụng Trait `ApiResp
 
 // Phân trang (Pagination): 200 OK
 {
-  "success": true, "code": 200, "message": "...",
-  "data": [ ... ],
-  "meta": { "currentPage": 1, "perPage": 10, "total": 35, "lastPage": 4 },
-  "links": { "first": "...", "last": "...", "prev": null, "next": "..." }
+  "success": true,
+  "code": 200,
+  "message": "...",
+  "data": {
+    "items": [ ... ],
+    "pagination": {
+      "currentPage": 1,
+      "perPage": 12,
+      "totalItems": 35,
+      "lastPage": 3
+    }
+  }
 }
 
 // Báo lỗi: 4xx / 5xx
@@ -91,4 +99,33 @@ Mọi Controller API kế thừa `BaseController` và sử dụng Trait `ApiResp
    - Hệ thống so khớp `hash_equals($stored, $plain)`.
    - Nếu khớp, tự động mã hóa lại bằng `Hash::make($plain)` và lưu lại DB.
 3. **Ẩn mật khẩu:** Model `Account` luôn bật `protected $hidden = ['mat_khau'];`.
+
+---
+
+## 🏗️ 7. Hạ Tầng Dịch Vụ Đa CSDL & Cổng Kết Nối (Polyglot Persistence Ports)
+
+Hệ thống kết hợp 4 công nghệ cơ sở dữ liệu chuyên biệt phục vụ các bài toán khác nhau:
+
+| Dịch vụ / Công nghệ | Môi trường / Nền tảng | Cổng Host (Port) | Vai trò & Trách nhiệm kiến trúc |
+| :--- | :--- | :---: | :--- |
+| **MySQL 8.0** | RDBMS Chính (Laragon) | `3306` | Lưu trữ dữ liệu quan hệ cốt lõi, đảm bảo toàn vẹn ACID transactions (Đơn hàng, Bàn ăn, Thanh toán). |
+| **Redis 7.2** | In-Memory Cache (Docker) | `6379` | Cache danh mục thực đơn (TTL 3600s), Khóa phân tán Distributed Locks chống Race Condition (`lock:order`, `lock:reservation`). |
+| **Neo4j 5 Community** | Graph Database (Docker) | `7474` (HTTP)<br>`7687` (Bolt) | Đồ thị tri thức khách hàng - món ăn, phục vụ gợi ý món bán kèm (Market Basket Analysis) và cá nhân hóa (Collaborative Filtering). |
+| **Meilisearch 1.7** | Search Engine (Docker) | `7700` | Động cơ tìm kiếm full-text đa ngôn ngữ, chịu lỗi chính tả (Typo-Tolerance) và tìm tiếng Việt không dấu siêu tốc. |
+| **Laravel 11 API** | Backend Service (PHP 8.3) | `8000` | Cung cấp RESTful API cho toàn bộ Client ứng dụng. |
+
+---
+
+## 🔍 8. Động Cơ Tìm Kiếm Thông Minh Meilisearch (Laravel Scout)
+
+- **Driver:** Laravel Scout (`SCOUT_DRIVER=meilisearch`).
+- **Endpoint Service:** `http://127.0.0.1:7700`, API Master Key: `masterKey123`.
+- **Tên Index:** `dishes` (ánh xạ từ Model `App\Modules\Menu\Models\Dish`).
+- **Cấu hình Typo-Tolerance tiếng Việt:**
+  - `minWordSizeForTypos: { oneTypo: 3, twoTypos: 7 }`: Cho phép sai 1 ký tự với các từ tiếng Việt 3–6 chữ cái (`pho`, `com`, `tra`, `che`...).
+  - `searchableAttributes`: `['name', 'description', 'category_name']`.
+  - `filterableAttributes`: `['category_id', 'is_available', 'is_visible', 'is_deleted']`.
+  - `sortableAttributes`: `['price', 'id']`.
+- **Graceful Fallback:** Toàn bộ truy vấn Meilisearch được bọc trong `try ... catch (\Throwable $e)`. Nếu container Meilisearch ngoại tuyến hoặc gặp sự cố, hệ thống tự động fallback về câu lệnh SQL `LIKE '%keyword%'` trên MySQL, bảo đảm 100% không làm gián đoạn trải nghiệm của khách.
+
 

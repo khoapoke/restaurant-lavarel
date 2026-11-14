@@ -397,4 +397,125 @@ class ModularApiTest extends TestCase
         $driver = config('scout.driver');
         $this->assertTrue(in_array($driver, ['meilisearch', 'null', null], true) || empty($driver));
     }
+
+    /**
+     * Test customer change password (USR-06).
+     */
+    public function test_customer_change_password_flow(): void
+    {
+        [$account, $token] = $this->createCustomerUser();
+
+        // 1. Wrong current password -> 400
+        $badResponse = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/customer/password', [
+                'currentPassword' => 'wrong_password',
+                'newPassword' => 'new_secret_123',
+                'newPassword_confirmation' => 'new_secret_123',
+            ]);
+        $badResponse->assertStatus(400);
+
+        // 2. Correct current password -> 200
+        $okResponse = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/customer/password', [
+                'currentPassword' => 'password123',
+                'newPassword' => 'new_secret_123',
+                'newPassword_confirmation' => 'new_secret_123',
+            ]);
+        $okResponse->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 200,
+            ]);
+
+        // 3. Verify login with new password
+        $loginResponse = $this->postJson('/api/v1/auth/login', [
+            'username' => $account->ten_dang_nhap,
+            'password' => 'new_secret_123',
+        ]);
+        $loginResponse->assertStatus(200);
+    }
+
+    /**
+     * Test admin account detail, create staff, update and status endpoints (ADM-02 -> ADM-05).
+     */
+    public function test_admin_account_management_crud_flow(): void
+    {
+        [$admin, $adminToken] = $this->createAdminUser();
+
+        // 1. ADM-03: Create Staff Account
+        $staffPayload = [
+            'username' => 'staff_' . uniqid(),
+            'password' => 'StaffPass123',
+            'password_confirmation' => 'StaffPass123',
+            'email' => 'staff_' . uniqid() . '@restaurant.com',
+            'fullName' => 'Nhân Viên Mẫu',
+            'phoneNumber' => '0987654321',
+            'address' => '789 Đường Hoa Lan, Q.PN',
+        ];
+        $createResponse = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->postJson('/api/v1/admin/accounts/staff', $staffPayload);
+        $createResponse->assertStatus(201)
+            ->assertJson([
+                'success' => true,
+                'code' => 201,
+            ]);
+        $staffId = $createResponse->json('data.accountId');
+        $this->assertNotNull($staffId);
+
+        // 2. ADM-02: Get Account Detail
+        $detailResponse = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->getJson("/api/v1/admin/accounts/{$staffId}");
+        $detailResponse->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 200,
+                'data' => [
+                    'accountId' => $staffId,
+                    'username' => $staffPayload['username'],
+                ],
+            ]);
+
+        // 3. ADM-04: Update Account
+        $updateResponse = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->putJson("/api/v1/admin/accounts/{$staffId}", [
+                'fullName' => 'Nhân Viên Đã Đổi Tên',
+                'phoneNumber' => '0911223344',
+            ]);
+        $updateResponse->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 200,
+                'data' => [
+                    'fullName' => 'Nhân Viên Đã Đổi Tên',
+                ],
+            ]);
+
+        // 4. ADM-05: Update Status to LOCKED
+        $lockResponse = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->patchJson("/api/v1/admin/accounts/{$staffId}/status", [
+                'status' => 'LOCKED',
+            ]);
+        $lockResponse->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 200,
+                'data' => [
+                    'status' => 'LOCKED',
+                ],
+            ]);
+
+        // 5. ADM-05: Update Status to ACTIVE
+        $unlockResponse = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->patchJson("/api/v1/admin/accounts/{$staffId}/status", [
+                'status' => 'ACTIVE',
+            ]);
+        $unlockResponse->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 200,
+                'data' => [
+                    'status' => 'ACTIVE',
+                ],
+            ]);
+    }
 }

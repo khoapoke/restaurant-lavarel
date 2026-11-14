@@ -92,11 +92,13 @@ stateDiagram-v2
 
 | Mã API | Method | Endpoint URL | Phân quyền | Body / Query Request | Response Payload | Mã HTTP |
 | :---: | :---: | :--- | :---: | :--- | :--- | :---: |
+| `ORD-01` | `POST` | `/api/v1/customer/orders/checkout` | `CUSTOMER` | `{ "fulfillmentType", "recipientName", "recipientPhone", "shippingAddress"?, "paymentMethod" }` | `201`: `OrderResource` *(Chi tiết Use Case tại Mục 6)* | `201 / 400 / 429` |
 | `ORD-02` | `PUT` | `/api/v1/customer/orders/{id}/cancel` | `CUSTOMER` | `{ "cancelReason": string }` | `OrderResource` (Status `CANCELLED`) | `200 / 409` |
 | `ORD-04` | `GET` | `/api/v1/customer/orders` | `CUSTOMER` | Query: `page`, `status` | Paginated `[OrderResource]` | `200` |
 | `ORD-05` | `GET` | `/api/v1/customer/orders/{id}` | `CUSTOMER` | *(Không)* | `OrderResource` chi tiết | `200 / 404` |
 | `ORD-06` | `GET` | `/api/v1/admin/orders` | `ADMIN` | Query: `page`, `status`, `date` | Paginated `[AdminOrderResource]` | `200` |
 | `ORD-07` | `GET` | `/api/v1/admin/orders/{id}` | `ADMIN` | *(Không)* | `AdminOrderResource` chi tiết | `200 / 404` |
+| `ORD-08` | `PATCH`| `/api/v1/admin/orders/{id}/status` | `ADMIN` | `{ "targetStatus": string, "cancelReason"?: string }` | `AdminOrderResource` *(Chi tiết FSM tại Mục 6)* | `200 / 400` |
 
 ---
 

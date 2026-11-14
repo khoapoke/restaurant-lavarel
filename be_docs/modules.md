@@ -14,7 +14,7 @@
 
 | STT | Nhóm Hạng Mục Theo Dõi | Đã Hoàn Thành (`X`) | Đang Làm (`O`) | Chưa Làm *(để trống)* | Tổng Cộng | Tỷ Lệ Hoàn Thành (%) |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
-| **1** | **API Logic & Nghiệp vụ (Endpoints)** | **59** | **0** | **0** | **59** | **100%** |
+| **1** | **API Logic & Nghiệp vụ (Endpoints)** | **63** | **0** | **0** | **63** | **100%** |
 | **2** | **Module Nghiệp vụ (Modules)** | **8** | **0** | **0** | **8** | **100%** |
 | **3** | **Lộ trình Refactor Kiến Trúc Module** | **8** | **0** | **0** | **8** | **100%** |
 
@@ -25,16 +25,16 @@
 | STT | Tên Module | Phạm vi nghiệp vụ | Số lượng API | Chi tiết đặc tả | Trạng thái Logic | Trạng thái Folder | Ghi chú kỹ thuật nổi bật |
 | :---: | :--- | :--- | :---: | :---: | :---: | :---: | :--- |
 | **1** | **`Auth`** | Tài khoản, Hồ sơ, Phân quyền | 11 APIs | [auth.md](modules/auth.md) | `X` | `X` | Auto-Upgrade BCrypt, Sanctum Token, RBAC |
-| **2** | **`Menu`** | Danh mục, Món ăn, Gợi ý | 14 APIs | [menu.md](modules/menu.md) | `X` | `X` | In-Memory Redis Cache, OpenWeatherMap API |
+| **2** | **`Menu`** | Danh mục, Món ăn, Gợi ý | 14 APIs | [menu.md](modules/menu.md) | `X` | `X` | In-Memory Redis Cache, Meilisearch Typo-Tolerance, OpenWeatherMap API |
 | **3** | **`Cart`** | Giỏ hàng khách hàng | 5 APIs | [cart.md](modules/cart.md) | `X` | `X` | Bảng liên kết Pivot nhiều-nhiều |
 | **4** | **`Order`** | Đặt hàng, Xử lý trạng thái FSM | 7 APIs | [order.md](modules/order.md) | `X` | `X` | Redis Distributed Lock, Snapshot đơn giá |
 | **5** | **`Reservation`** | Quản lý bàn & Đặt bàn | 11 APIs | [reservation.md](modules/reservation.md) | `X` | `X` | Redis Distributed Lock, Kiểm tra trùng giờ $\pm 119'$ |
-| **6** | **`Payment`** | Thanh toán, VietQR, Webhook | 6 APIs | [payment.md](modules/payment.md) | `X` | `X` | VietQR Napas 247, Webhook đối soát |
+| **6** | **`Payment`** | Thanh toán, VietQR, Webhook | 7 APIs | [payment.md](modules/payment.md) | `X` | `X` | VietQR Napas 247, Webhook đối soát |
 | **7** | **`Report`** | Báo cáo & Dashboard Admin | 5 APIs | [report.md](modules/report.md) | `X` | `X` | Tổng hợp Aggregates SQL hiệu năng cao |
 | **8** | **`Recommendation`** | Gợi ý đồ thị Neo4j | 3 APIs | [recommendation.md](modules/recommendation.md) | `X` | `X` | Market Basket Analysis & Graph Filtering |
 | **9** | **`Core` / `Shared`** | Enums, Middlewares, Exceptions | Hạ tầng | (Xem mục 4 bên dưới) | `X` | `X` | Unified JSON Envelope, Exception Shielding |
 
-*Tổng số API Endpoint đã hoàn thành và kiểm thử:* **59 APIs**
+*Tổng số API Endpoint đã hoàn thành và kiểm thử:* **63 APIs**
 
 ---
 
@@ -131,6 +131,7 @@
 | `PAY-02` | `GET` | `/api/v1/admin/payments/{id}` | Chi tiết giao dịch thanh toán | `X` |
 | `PAY-03` | `PATCH`| `/api/v1/admin/payments/{id}/confirm` | Xác nhận đã thu tiền mặt tại quầy | `X` |
 | `PAY-04` | `GET` | `/api/v1/customer/payments/{orderId}` | Lấy thông tin thanh toán & mã VietQR động | `X` |
+| `PAY-05` | `POST` | `/api/v1/admin/payments/{id}/refund` | Hoàn tiền giao dịch & Tự hủy đơn hàng | `X` |
 | `PAY-06` | `GET` | `/api/v1/customer/payments/{orderId}/status`| Kiểm tra trạng thái thanh toán đơn hàng | `X` |
 | `PAY-07` | `POST` | `/api/v1/customer/payments/webhook` | Webhook nhận biến động số dư VietQR | `X` |
 
