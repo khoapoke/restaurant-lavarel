@@ -16,11 +16,16 @@ Route::prefix('auth')->group(function () {
 Route::prefix('customer')->middleware(['auth:sanctum', 'account.active', 'role:CUSTOMER'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::put('/profile', [ProfileController::class, 'update']);
+    Route::put('/password', [ProfileController::class, 'changePassword']);
 });
 
 // 3. Admin Account Management APIs
 Route::prefix('admin/accounts')->middleware(['auth:sanctum', 'account.active', 'role:ADMIN'])->group(function () {
     Route::get('/', [AdminAccountController::class, 'index']);
+    Route::post('/staff', [AdminAccountController::class, 'storeStaff']);
+    Route::get('/{accountId}', [AdminAccountController::class, 'show'])->whereNumber('accountId');
+    Route::put('/{accountId}', [AdminAccountController::class, 'update'])->whereNumber('accountId');
+    Route::patch('/{accountId}/status', [AdminAccountController::class, 'updateStatus'])->whereNumber('accountId');
     Route::patch('/{accountId}/lock', [AdminAccountController::class, 'lock'])->whereNumber('accountId');
     Route::patch('/{accountId}/unlock', [AdminAccountController::class, 'unlock'])->whereNumber('accountId');
 });

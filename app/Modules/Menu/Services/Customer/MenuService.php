@@ -50,9 +50,9 @@ class MenuService
         $perPage = (int) ($filters['perPage'] ?? 12);
         $page = (int) ($filters['page'] ?? 1);
 
-        // 1. Tìm kiếm bằng Meilisearch khi có keyword
-        if (!empty($filters['keyword'])) {
-            $keyword = trim($filters['keyword']);
+        // 1. Tìm kiếm bằng Meilisearch khi có keyword hoặc q
+        $keyword = !empty($filters['keyword']) ? trim($filters['keyword']) : (!empty($filters['q']) ? trim($filters['q']) : null);
+        if (!empty($keyword)) {
 
             try {
                 if (config('scout.driver') === 'meilisearch') {

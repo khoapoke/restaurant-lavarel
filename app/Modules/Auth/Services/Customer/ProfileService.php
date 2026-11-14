@@ -5,6 +5,8 @@ namespace App\Modules\Auth\Services\Customer;
 use App\Modules\Auth\Models\Account;
 use App\Modules\Auth\Models\UserProfile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ProfileService
 {
@@ -73,6 +75,39 @@ class ProfileService
 
             return $account->load('userProfile');
         });
+    }
+
+    /**
+     * Change customer password (USR-06).
+     *
+     * @param Account $account
+     * @param string $currentPassword
+     * @param string $newPassword
+     * @return void
+     * @throws HttpException
+     */
+    public function changePassword(Account $account, string $currentPassword, string $newPassword): void
+    {
+        $stored = $account->mat_khau;
+        $isValid = false;
+
+        if (str_starts_with($stored, '$2y$') || str_starts_with($stored, '$2a$') || str_starts_with($stored, '$2b$')) {
+            $isValid = Hash::check($currentPassword, $stored);
+        } else {
+            $isValid = hash_equals((string) $stored, (string) $currentPassword);
+        }
+
+        if (!$isValid) {
+            throw new HttpException(400, 'Current password does not match');
+        }
+
+        $account->mat_khau = Hash::make($newPassword);
+        $account->save();
+
+        // Thu hồi toàn bộ token cũ trừ token phiên hiện tại
+        if ($account->currentAccessToken()) {
+            $account->tokens()->where('id', '!=', $account->currentAccessToken()->id)->delete();
+        }
     }
 }
 

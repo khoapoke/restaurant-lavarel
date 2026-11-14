@@ -56,5 +56,31 @@ class ProfileController extends BaseController
             'dietaryPreferences' => $profile?->dietaryPreferences ?? [],
         ], 'Profile updated successfully', 200);
     }
+
+    /**
+     * Change customer password (USR-06).
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'currentPassword' => 'required|string',
+            'newPassword' => 'required|string|min:6|confirmed',
+        ]);
+
+        $this->profileService->changePassword(
+            $request->user(),
+            $request->input('currentPassword'),
+            $request->input('newPassword')
+        );
+
+        return $this->successResponse(
+            null,
+            'Password changed successfully',
+            200
+        );
+    }
 }
 

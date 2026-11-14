@@ -39,6 +39,104 @@ class AccountController extends BaseController
     }
 
     /**
+     * Get account detail by ID (ADM-02).
+     *
+     * @param int $accountId
+     * @return JsonResponse
+     */
+    public function show(int $accountId): JsonResponse
+    {
+        $account = $this->accountService->getAccountDetail($accountId);
+
+        return $this->successResponse(
+            new AdminAccountResource($account),
+            'Account detail retrieved successfully',
+            200
+        );
+    }
+
+    /**
+     * Create staff account (ADM-03).
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function storeStaff(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'username' => 'required|string|min:3|max:50|unique:TAI_KHOAN,ten_dang_nhap',
+            'password' => 'required|string|min:6|confirmed',
+            'email' => 'required|email|max:100|unique:TAI_KHOAN,email',
+            'fullName' => 'required|string|max:100',
+            'phoneNumber' => 'required|string|regex:/^0[0-9]{9}$/',
+            'birthDate' => 'nullable|date',
+            'address' => 'nullable|string|max:255',
+        ]);
+
+        $account = $this->accountService->createStaffAccount($validated);
+
+        return $this->successResponse(
+            new AdminAccountResource($account),
+            'Staff account created successfully',
+            201
+        );
+    }
+
+    /**
+     * Update account info (ADM-04).
+     *
+     * @param Request $request
+     * @param int $accountId
+     * @return JsonResponse
+     */
+    public function update(Request $request, int $accountId): JsonResponse
+    {
+        $validated = $request->validate([
+            'fullName' => 'nullable|string|max:100',
+            'phoneNumber' => 'nullable|string|regex:/^0[0-9]{9}$/',
+            'birthDate' => 'nullable|date',
+            'address' => 'nullable|string|max:255',
+            'email' => "nullable|email|max:100|unique:TAI_KHOAN,email,{$accountId},ma_tai_khoan",
+            'roleId' => 'nullable|exists:VAI_TRO,ma_vai_tro',
+            'status' => 'nullable|string|in:ACTIVE,LOCKED',
+        ]);
+
+        $account = $this->accountService->updateAccount($accountId, $validated);
+
+        return $this->successResponse(
+            new AdminAccountResource($account),
+            'Account updated successfully',
+            200
+        );
+    }
+
+    /**
+     * Update status (lock/unlock) of an account (ADM-05).
+     *
+     * @param Request $request
+     * @param int $accountId
+     * @return JsonResponse
+     */
+    public function updateStatus(Request $request, int $accountId): JsonResponse
+    {
+        $request->validate([
+            'status' => 'required|string|in:ACTIVE,LOCKED,Hoạt động,Bị khóa',
+        ]);
+
+        $account = $this->accountService->updateStatus(
+            $request->user(),
+            $accountId,
+            $request->input('status')
+        );
+
+        return $this->successResponse(
+            new AdminAccountResource($account),
+            'Account status updated successfully',
+            200
+        );
+    }
+
+    /**
      * Lock an account and revoke active tokens (USR-09).
      *
      * @param Request $request
