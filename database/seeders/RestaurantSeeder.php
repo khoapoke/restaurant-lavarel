@@ -40,6 +40,7 @@ class RestaurantSeeder extends Seeder
             CartSeeder::class,        // 7. Bảng GIO_HANG, MON_AN_GIO_HANG      (FK -> TAI_KHOAN, MON_AN)
             OrderSeeder::class,       // 8. Bảng DON_HANG, CHI_TIET, THANH_TOAN (FK -> TAI_KHOAN, MON_AN)
             ReservationSeeder::class, // 9. Bảng DAT_BAN                        (FK -> TAI_KHOAN, BAN_AN)
+            ChatSeeder::class,        // 10. Bảng PHIEN_CHAT, TIN_NHAN_CHAT     (FK -> TAI_KHOAN)
         ]);
     }
 }

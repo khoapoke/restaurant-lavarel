@@ -34,6 +34,9 @@ $registerModuleRoutes = function () {
     // 8. Recommendation Module (Neo4j Graph-based Recommendations)
     require app_path('Modules/Recommendation/Routes/api.php');
 
+    // 9. Chat Module (AI Chatbot & Live Staff Support)
+    require app_path('Modules/Chat/Routes/api.php');
+
     // Authenticated user test route
     Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
         return $request->user();

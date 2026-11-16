@@ -161,7 +161,23 @@
 
 ---
 
-## 🧩 4. MODULE 9: CORE / SHARED (Nền Tảng Dùng Chung Toàn Hệ Thống)
+### 💬 MODULE 9: CHAT (Trợ Lý Ảo Chatbot AI & Hỗ Trợ Khách Hàng) – [`be_docs/modules/chat.md`](modules/chat.md)
+
+| Mã API | Method | Endpoint URL | Tên tính năng | Trạng thái |
+| :---: | :---: | :--- | :--- | :---: |
+| `CHT-01` | `GET` | `/api/v1/customer/chat/sessions` | Lấy danh sách các phiên chat của khách hàng | `X` |
+| `CHT-02` | `POST` | `/api/v1/customer/chat/sessions` | Khởi tạo phiên chat mới kèm lời chào từ Bot | `X` |
+| `CHT-03` | `GET` | `/api/v1/customer/chat/sessions/{id}` | Lấy chi tiết phiên và toàn bộ lịch sử tin nhắn | `X` |
+| `CHT-04` | `POST` | `/api/v1/customer/chat/sessions/{id}/messages` | Khách gửi tin nhắn (Tự động kích hoạt AI Bot) | `X` |
+| `CHT-05` | `POST` | `/api/v1/customer/chat/sessions/{id}/request-staff` | Yêu cầu chuyển giao sang nhân viên hỗ trợ | `X` |
+| `CHT-06` | `GET` | `/api/v1/staff/chat/pending` | Danh sách phiên chat đang chờ nhân viên tiếp nhận | `X` |
+| `CHT-07` | `POST` | `/api/v1/staff/chat/sessions/{id}/assign` | Nhân viên nhận xử lý phiên chat trực tiếp | `X` |
+| `CHT-08` | `POST` | `/api/v1/staff/chat/sessions/{id}/messages` | Nhân viên gửi tin nhắn trực tiếp cho khách | `X` |
+| `CHT-09` | `POST` | `/api/v1/staff/chat/sessions/{id}/close` | Kết thúc và đóng phiên hỗ trợ khách hàng | `X` |
+
+---
+
+## 🧩 4. MODULE CORE / SHARED (Nền Tảng Dùng Chung Toàn Hệ Thống)
 
 - **Vị trí thư mục:** `app/Modules/Core/`
 - **Trách nhiệm:** Chứa toàn bộ các thành phần hạ tầng chung mà các module khác phụ thuộc vào:
