@@ -101,6 +101,27 @@ class PaymentController extends BaseController
             ],
         ], 'Callback logs retrieved successfully', 200);
     }
+
+    /**
+     * Xác nhận thanh toán thành công thủ công bởi nhân viên / quản lý (PAY-03).
+     *
+     * @param Request $request
+     * @param int $paymentId
+     * @return JsonResponse
+     */
+    public function confirm(Request $request, int $paymentId): JsonResponse
+    {
+        $note = $request->input('note');
+        $staffId = $request->user() ? (int) $request->user()->ma_tai_khoan : null;
+
+        $result = $this->paymentService->confirmPayment($paymentId, $note, $staffId);
+
+        return $this->successResponse(
+            $result,
+            'Payment confirmed successfully by staff',
+            200
+        );
+    }
 }
 
 

@@ -173,13 +173,16 @@ class ReservationService
             $reservation->ma_ban = $newTableId;
             $table = $newTable;
 
-            // Giải phóng bàn cũ nếu trước đó là RESERVED và không còn đơn CONFIRMED nào khác
-            if ($oldTable && $oldTable->trang_thai === TableStatus::RESERVED) {
-                $hasOtherConfirmed = Reservation::where('ma_ban', $oldTableId)
+            // Giải phóng bàn cũ nếu trước đó là RESERVED/OCCUPIED và không còn đơn CONFIRMED/OCCUPIED nào khác
+            if ($oldTable && in_array($oldTable->trang_thai, [TableStatus::RESERVED, TableStatus::OCCUPIED])) {
+                $hasOtherActive = Reservation::where('ma_ban', $oldTableId)
                     ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
-                    ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                    ->whereIn('trang_thai', [
+                        ReservationStatus::CONFIRMED->value,
+                        ReservationStatus::OCCUPIED->value,
+                    ])
                     ->exists();
-                if (!$hasOtherConfirmed) {
+                if (!$hasOtherActive) {
                     $oldTable->trang_thai = TableStatus::AVAILABLE;
                     $oldTable->save();
                 }
@@ -198,10 +201,13 @@ class ReservationService
             $startTime = $resTime->copy()->subMinutes(119);
             $endTime = $resTime->copy()->addMinutes(119);
 
-            // Kiểm tra trùng khung giờ với lượt đặt CONFIRMED khác
+            // Kiểm tra trùng khung giờ với lượt đặt CONFIRMED hoặc OCCUPIED khác
             $hasOverlappingConfirmed = Reservation::where('ma_ban', $reservation->ma_ban)
                 ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
-                ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                ->whereIn('trang_thai', [
+                    ReservationStatus::CONFIRMED->value,
+                    ReservationStatus::OCCUPIED->value,
+                ])
                 ->whereBetween('thoi_gian', [$startTime, $endTime])
                 ->exists();
 
@@ -223,7 +229,15 @@ class ReservationService
             }
         }
 
-        // 3. Cập nhật trạng thái bàn nếu có yêu cầu trực tiếp (ví dụ khách nhận bàn -> OCCUPIED)
+        // 3. Khi khách đến nhận bàn (OCCUPIED) -> Tự động đồng bộ bàn ăn sang OCCUPIED
+        if ($targetStatus === ReservationStatus::OCCUPIED) {
+            if ($table && $table->trang_thai !== TableStatus::MAINTENANCE) {
+                $table->trang_thai = TableStatus::OCCUPIED;
+                $table->save();
+            }
+        }
+
+        // 4. Cập nhật trạng thái bàn nếu có yêu cầu trực tiếp
         if ($tableStatusInput && $table && $table->trang_thai !== TableStatus::MAINTENANCE) {
             $matchedTableStatus = TableStatus::fromName($tableStatusInput);
             if ($matchedTableStatus) {
@@ -232,17 +246,20 @@ class ReservationService
             }
         }
 
-        // 4. BKG-10, BKG-11, BKG-12: Khi chuyển sang REJECTED, CANCELLED, COMPLETED -> Giải phóng bàn về AVAILABLE
+        // 5. BKG-10, BKG-11, BKG-12: Khi chuyển sang REJECTED, CANCELLED, COMPLETED -> Giải phóng bàn về AVAILABLE
         if (in_array($targetStatus, [
             ReservationStatus::REJECTED,
             ReservationStatus::CANCELLED,
             ReservationStatus::COMPLETED,
         ])) {
             if ($table && $table->trang_thai !== TableStatus::MAINTENANCE) {
-                // Kiểm tra xem bàn có còn lượt CONFIRMED nào khác không
+                // Kiểm tra xem bàn có còn lượt CONFIRMED hoặc OCCUPIED nào khác không
                 $hasOtherActive = Reservation::where('ma_ban', $reservation->ma_ban)
                     ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
-                    ->where('trang_thai', ReservationStatus::CONFIRMED->value)
+                    ->whereIn('trang_thai', [
+                        ReservationStatus::CONFIRMED->value,
+                        ReservationStatus::OCCUPIED->value,
+                    ])
                     ->whereDate('thoi_gian', Carbon::parse($reservation->thoi_gian)->toDateString())
                     ->exists();
 
@@ -274,6 +291,36 @@ class ReservationService
             'tableId' => (int) $reservation->ma_ban,
             'tableStatus' => $tableStatusName,
         ];
+    }
+
+    /**
+     * Confirm received deposit manually by Admin/Staff (BKG-14).
+     *
+     * @param int $reservationId
+     * @return Reservation
+     * @throws HttpException
+     */
+    public function confirmDeposit(int $reservationId): Reservation
+    {
+        $reservation = Reservation::with(['diningTable', 'account.userProfile'])
+            ->where('ma_dat_ban', $reservationId)
+            ->first();
+
+        if (!$reservation) {
+            throw new HttpException(404, 'Reservation not found');
+        }
+
+        $reservation->da_thanh_toan_coc = true;
+        $reservation->trang_thai = ReservationStatus::CONFIRMED;
+        $reservation->save();
+
+        $table = $reservation->diningTable;
+        if ($table && $table->trang_thai !== TableStatus::MAINTENANCE && $table->trang_thai !== TableStatus::OCCUPIED) {
+            $table->trang_thai = TableStatus::RESERVED;
+            $table->save();
+        }
+
+        return $reservation;
     }
 }
 

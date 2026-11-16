@@ -95,6 +95,26 @@ class OrderController extends BaseController
             200
         );
     }
+
+    /**
+     * Staff/Admin confirms payment received for order (ORD-13).
+     *
+     * @param Request $request
+     * @param int $orderId
+     * @return JsonResponse
+     */
+    public function confirmPayment(Request $request, int $orderId): JsonResponse
+    {
+        $note = $request->input('note');
+        $staffId = $request->user() ? (int) $request->user()->ma_tai_khoan : null;
+        $result = $this->orderService->confirmPayment($orderId, $note, $staffId);
+
+        return $this->successResponse(
+            $result,
+            'Order payment confirmed successfully by staff',
+            200
+        );
+    }
 }
 
 

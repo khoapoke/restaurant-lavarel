@@ -63,6 +63,21 @@ class PaymentController extends BaseController
     }
 
     /**
+     * Mock payment success for customer order (dev/test).
+     *
+     * @param Request $request
+     * @param int $orderId
+     * @return JsonResponse
+     */
+    public function mockPayment(Request $request, int $orderId): JsonResponse
+    {
+        $account = $request->user();
+        $result = $this->paymentService->mockPaymentSuccess((int) $account->ma_tai_khoan, $orderId);
+
+        return $this->successResponse($result, 'Payment confirmed successfully (mocked)', 200);
+    }
+
+    /**
      * Webhook callback from payment gateway (VietQR/SePay/PayOS).
      *
      * @param Request $request
@@ -71,12 +86,20 @@ class PaymentController extends BaseController
     public function handleCallback(Request $request): JsonResponse
     {
         $signature = $request->header('x-signature') ?? $request->header('signature');
-        $payment = $this->paymentService->processWebhook($request->all(), $signature);
+        $result = $this->paymentService->processWebhook($request->all(), $signature);
 
-        return $this->successResponse([
-            'orderId' => (int) $payment->ma_don_hang,
-            'status' => 'PAID',
-        ], 'Payment webhook processed successfully', 200);
+        if ($result instanceof \App\Modules\Payment\Models\Payment) {
+            return $this->successResponse([
+                'orderId' => (int) $result->ma_don_hang,
+                'status' => 'PAID',
+            ], 'Payment webhook processed successfully', 200);
+        }
+
+        return $this->successResponse(
+            $result,
+            'Reservation deposit webhook processed successfully',
+            200
+        );
     }
 }
 

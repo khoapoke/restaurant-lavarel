@@ -118,6 +118,23 @@ class ReservationController extends BaseController
             Response::HTTP_OK
         );
     }
+
+    /**
+     * Confirm received deposit manually by Admin/Staff (BKG-14).
+     *
+     * @param int $reservationId
+     * @return JsonResponse
+     */
+    public function confirmDeposit(int $reservationId): JsonResponse
+    {
+        $reservation = $this->reservationService->confirmDeposit($reservationId);
+
+        return $this->successResponse(
+            new AdminReservationResource($reservation),
+            'Reservation deposit confirmed successfully',
+            Response::HTTP_OK
+        );
+    }
 }
 
 

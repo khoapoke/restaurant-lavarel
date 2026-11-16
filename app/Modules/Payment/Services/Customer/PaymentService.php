@@ -153,11 +153,55 @@ class PaymentService
      *
      * @param array<string, mixed> $payload
      * @param string|null $signature
-     * @return Payment
+     * @return Payment|array<string, mixed>
      * @throws HttpException
      */
-    public function processWebhook(array $payload, ?string $signature = null): Payment
+    public function processWebhook(array $payload, ?string $signature = null): Payment|array
     {
+        // 1. Kiểm tra nếu là thanh toán tiền cọc đặt bàn (DB{id})
+        $reservationId = null;
+        if (!empty($payload['reservationId'])) {
+            $reservationId = (int) $payload['reservationId'];
+        } elseif (!empty($payload['content'])) {
+            if (preg_match('/DB(\d+)/i', (string) $payload['content'], $matches)) {
+                $reservationId = (int) $matches[1];
+            }
+        } elseif (!empty($payload['description'])) {
+            if (preg_match('/DB(\d+)/i', (string) $payload['description'], $matches)) {
+                $reservationId = (int) $matches[1];
+            }
+        }
+
+        if ($reservationId) {
+            $reservation = \App\Modules\Reservation\Models\Reservation::with('diningTable')->find($reservationId);
+            if (!$reservation) {
+                throw new HttpException(404, "Reservation #{$reservationId} not found");
+            }
+
+            $paidAmount = $payload['amount'] ?? $payload['transferAmount'] ?? null;
+            if ($paidAmount !== null && (float) $paidAmount < (float) $reservation->tien_coc) {
+                throw new HttpException(400, "Paid amount ({$paidAmount}) is less than required deposit ({$reservation->tien_coc})");
+            }
+
+            $reservation->da_thanh_toan_coc = true;
+            $reservation->trang_thai = \App\Modules\Core\Enums\ReservationStatus::CONFIRMED;
+            $reservation->save();
+
+            $table = $reservation->diningTable;
+            if ($table && $table->trang_thai === \App\Modules\Core\Enums\TableStatus::AVAILABLE) {
+                $table->trang_thai = \App\Modules\Core\Enums\TableStatus::RESERVED;
+                $table->save();
+            }
+
+            return [
+                'reservationId' => (int) $reservation->ma_dat_ban,
+                'status' => 'CONFIRMED',
+                'depositAmount' => (float) $reservation->tien_coc,
+                'isDepositPaid' => true,
+            ];
+        }
+
+        // 2. Mặc định: Thanh toán đơn hàng (DH{id})
         $orderId = null;
 
         if (!empty($payload['orderId'])) {
@@ -173,7 +217,7 @@ class PaymentService
         }
 
         if (!$orderId) {
-            throw new HttpException(400, 'Cannot identify order ID from webhook payload');
+            throw new HttpException(400, 'Cannot identify order ID or reservation ID from webhook payload');
         }
 
         $order = Order::with('payment')->where('ma_don_hang', $orderId)->first();
@@ -253,6 +297,64 @@ class PaymentService
             'qrImageUrl' => $qrImageUrl,
             'transferContent' => $transferContent,
             'expiresAt' => $expiresAt,
+        ];
+    }
+
+    /**
+     * Mock successful payment for customer order (dev/test without real webhook).
+     *
+     * @param int $accountId
+     * @param int $orderId
+     * @return array<string, mixed>
+     * @throws HttpException
+     */
+    public function mockPaymentSuccess(int $accountId, int $orderId): array
+    {
+        $order = Order::with('payment')
+            ->where('ma_don_hang', $orderId)
+            ->where('ma_tai_khoan', $accountId)
+            ->first();
+
+        if (!$order) {
+            throw new HttpException(404, 'Order not found');
+        }
+
+        if ($order->trang_thai === OrderStatus::CANCELLED) {
+            throw new HttpException(400, 'Order has already been cancelled');
+        }
+
+        $payment = $order->payment;
+        if (!$payment) {
+            $payment = Payment::create([
+                'so_tien' => $order->tong_tien,
+                'phuong_thuc' => PaymentMethod::BANK_TRANSFER_QR,
+                'trang_thai' => PaymentStatus::UNPAID,
+                'ma_don_hang' => $order->ma_don_hang,
+            ]);
+        }
+
+        $payment->trang_thai = PaymentStatus::PAID;
+        if (empty($payment->ma_giao_dich)) {
+            $payment->ma_giao_dich = 'MOCK-' . strtoupper(uniqid());
+        }
+        $payment->log_callback = json_encode([
+            'type' => 'customer_mock_payment',
+            'time' => now()->toIso8601String(),
+        ]);
+        $payment->save();
+
+        if ($order->trang_thai === OrderStatus::PENDING_CONFIRMATION) {
+            $order->trang_thai = OrderStatus::CONFIRMED;
+            $order->save();
+        }
+
+        return [
+            'paymentId' => (int) $payment->paymentId,
+            'orderId' => (int) $order->orderId,
+            'amount' => (float) $payment->so_tien,
+            'status' => 'PAID',
+            'orderStatus' => 'CONFIRMED',
+            'isPaid' => true,
         ];
     }
 }

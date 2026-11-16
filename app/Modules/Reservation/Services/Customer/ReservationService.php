@@ -16,6 +16,38 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 class ReservationService
 {
     /**
+     * Check if a given time falls into peak hours (11:30-13:30 or 18:00-20:30).
+     *
+     * @param Carbon $time
+     * @return bool
+     */
+    public function isPeakHour(Carbon $time): bool
+    {
+        $timeStr = $time->format('H:i');
+        $isLunchPeak = ($timeStr >= '11:30' && $timeStr <= '13:30');
+        $isDinnerPeak = ($timeStr >= '18:00' && $timeStr <= '20:30');
+
+        return $isLunchPeak || $isDinnerPeak;
+    }
+
+    /**
+     * Calculate deposit amount based on guest count and peak hour.
+     * Rule: >= 6 guests in peak hours = 50,000 VND / guest. Otherwise 0.
+     *
+     * @param int $guestCount
+     * @param Carbon $time
+     * @return float
+     */
+    public function calculateDeposit(int $guestCount, Carbon $time): float
+    {
+        if ($guestCount >= 6 && $this->isPeakHour($time)) {
+            return (float) ($guestCount * 50000);
+        }
+
+        return 0.0;
+    }
+
+    /**
      * Find available tables by date, time, and guest count (BKG-01).
      *
      * @param string $date
@@ -29,16 +61,19 @@ class ReservationService
         $startTime = $reservationTime->copy()->subMinutes(119);
         $endTime = $reservationTime->copy()->addMinutes(119);
 
-        $activeStatuses = [
-            ReservationStatus::PENDING->value,
-            ReservationStatus::CONFIRMED->value,
-        ];
-
         return DiningTable::where('suc_chua', '>=', $guestCount)
             ->where('trang_thai', '!=', TableStatus::MAINTENANCE)
-            ->whereDoesntHave('reservations', function ($query) use ($startTime, $endTime, $activeStatuses) {
-                $query->whereIn('trang_thai', $activeStatuses)
-                    ->whereBetween('thoi_gian', [$startTime, $endTime]);
+            ->whereDoesntHave('reservations', function ($query) use ($startTime, $endTime) {
+                $query->where(function ($subQ) {
+                    $subQ->whereIn('trang_thai', [
+                        ReservationStatus::PENDING->value,
+                        ReservationStatus::CONFIRMED->value,
+                        ReservationStatus::OCCUPIED->value,
+                    ])->orWhere(function ($depositQ) {
+                        $depositQ->where('trang_thai', ReservationStatus::PENDING_DEPOSIT->value)
+                            ->where('han_chot_coc', '>', now());
+                    });
+                })->whereBetween('thoi_gian', [$startTime, $endTime]);
             })
             ->orderBy('suc_chua')
             ->orderBy('ma_ban')
@@ -146,10 +181,16 @@ class ReservationService
                 $endTime = $reservationTime->copy()->addMinutes(119);
 
                 $hasConflict = Reservation::where('ma_ban', $tableId)
-                    ->whereIn('trang_thai', [
-                        ReservationStatus::PENDING->value,
-                        ReservationStatus::CONFIRMED->value,
-                    ])
+                    ->where(function ($q) {
+                        $q->whereIn('trang_thai', [
+                            ReservationStatus::PENDING->value,
+                            ReservationStatus::CONFIRMED->value,
+                            ReservationStatus::OCCUPIED->value,
+                        ])->orWhere(function ($depositQ) {
+                            $depositQ->where('trang_thai', ReservationStatus::PENDING_DEPOSIT->value)
+                                ->where('han_chot_coc', '>', now());
+                        });
+                    })
                     ->whereBetween('thoi_gian', [$startTime, $endTime])
                     ->exists();
 
@@ -157,14 +198,22 @@ class ReservationService
                     throw new HttpException(409, 'Table is already reserved for the selected time slot');
                 }
 
-                // 5. Tạo lượt đặt bàn
+                // 5. Tính tiền cọc & thời hạn giữ bàn 15 phút
+                $deposit = $this->calculateDeposit($guestCount, $reservationTime);
+                $initialStatus = $deposit > 0 ? ReservationStatus::PENDING_DEPOSIT : ReservationStatus::PENDING;
+                $depositDeadline = $deposit > 0 ? now()->addMinutes(15) : null;
+
+                // 6. Tạo lượt đặt bàn
                 $reservation = Reservation::create([
                     'thoi_gian' => $reservationTime,
                     'so_luong_khach' => $guestCount,
-                    'trang_thai' => ReservationStatus::PENDING,
+                    'trang_thai' => $initialStatus,
                     'ghi_chu' => $note,
                     'ma_tai_khoan' => $accountId,
                     'ma_ban' => $tableId,
+                    'tien_coc' => $deposit,
+                    'da_thanh_toan_coc' => false,
+                    'han_chot_coc' => $depositDeadline,
                 ]);
 
                 return $reservation->load('diningTable');
@@ -194,8 +243,13 @@ class ReservationService
             throw new HttpException(404, 'Reservation not found');
         }
 
-        if (in_array($reservation->trang_thai, [ReservationStatus::CANCELLED, ReservationStatus::REJECTED, ReservationStatus::COMPLETED])) {
-            throw new HttpException(409, 'Cannot modify a cancelled or completed reservation');
+        if (in_array($reservation->trang_thai, [
+            ReservationStatus::CANCELLED,
+            ReservationStatus::REJECTED,
+            ReservationStatus::COMPLETED,
+            ReservationStatus::OCCUPIED,
+        ])) {
+            throw new HttpException(409, 'Cannot modify a cancelled, completed or occupied reservation');
         }
 
         // Kiểm tra thời gian sửa trước giờ hẹn ít nhất 60 phút (Chính sách 1.2.5.b)
@@ -238,10 +292,16 @@ class ReservationService
 
         $hasConflict = Reservation::where('ma_ban', $newTableId)
             ->where('ma_dat_ban', '!=', $reservation->ma_dat_ban)
-            ->whereIn('trang_thai', [
-                ReservationStatus::PENDING->value,
-                ReservationStatus::CONFIRMED->value,
-            ])
+            ->where(function ($q) {
+                $q->whereIn('trang_thai', [
+                    ReservationStatus::PENDING->value,
+                    ReservationStatus::CONFIRMED->value,
+                    ReservationStatus::OCCUPIED->value,
+                ])->orWhere(function ($depositQ) {
+                    $depositQ->where('trang_thai', ReservationStatus::PENDING_DEPOSIT->value)
+                        ->where('han_chot_coc', '>', now());
+                });
+            })
             ->whereBetween('thoi_gian', [$startTime, $endTime])
             ->exists();
 
@@ -253,7 +313,17 @@ class ReservationService
         $reservation->ma_ban = $newTableId;
         $reservation->so_luong_khach = $newGuestCount;
         $reservation->ghi_chu = $newNote;
-        $reservation->trang_thai = ReservationStatus::PENDING;
+
+        // Nếu chưa cọc, tính lại tiền cọc và hạn chót theo giờ/số lượng mới
+        if (!$reservation->da_thanh_toan_coc) {
+            $deposit = $this->calculateDeposit($newGuestCount, $newTime);
+            $reservation->tien_coc = $deposit;
+            $reservation->han_chot_coc = $deposit > 0 ? now()->addMinutes(15) : null;
+            $reservation->trang_thai = $deposit > 0 ? ReservationStatus::PENDING_DEPOSIT : ReservationStatus::PENDING;
+        } else {
+            $reservation->trang_thai = ReservationStatus::PENDING;
+        }
+
         $reservation->save();
 
         return $reservation->load('diningTable');
@@ -282,8 +352,8 @@ class ReservationService
             throw new HttpException(409, 'Reservation is already cancelled');
         }
 
-        if ($reservation->trang_thai === ReservationStatus::COMPLETED) {
-            throw new HttpException(409, 'Cannot cancel a completed reservation');
+        if ($reservation->trang_thai === ReservationStatus::COMPLETED || $reservation->trang_thai === ReservationStatus::OCCUPIED) {
+            throw new HttpException(409, 'Cannot cancel a completed or occupied reservation');
         }
 
         // Kiểm tra hủy trước giờ hẹn ít nhất 60 phút (Chính sách 1.2.5.b)
@@ -306,6 +376,48 @@ class ReservationService
 
         $reservation->trang_thai = ReservationStatus::CANCELLED;
         $reservation->save();
+
+        return $reservation;
+    }
+
+    /**
+     * Mock successful deposit payment for customer reservation (BKG-13).
+     *
+     * @param int $accountId
+     * @param int $reservationId
+     * @return Reservation
+     * @throws HttpException
+     */
+    public function mockDepositSuccess(int $accountId, int $reservationId): Reservation
+    {
+        $reservation = Reservation::with('diningTable')
+            ->where('ma_dat_ban', $reservationId)
+            ->where('ma_tai_khoan', $accountId)
+            ->first();
+
+        if (!$reservation) {
+            throw new HttpException(404, 'Reservation not found');
+        }
+
+        if ($reservation->trang_thai !== ReservationStatus::PENDING_DEPOSIT) {
+            throw new HttpException(400, 'Reservation does not require deposit or is not pending deposit');
+        }
+
+        if ($reservation->han_chot_coc && $reservation->han_chot_coc->isPast()) {
+            $reservation->trang_thai = ReservationStatus::CANCELLED;
+            $reservation->save();
+            throw new HttpException(400, 'Deposit payment window has expired. Reservation is cancelled.');
+        }
+
+        $reservation->da_thanh_toan_coc = true;
+        $reservation->trang_thai = ReservationStatus::CONFIRMED;
+        $reservation->save();
+
+        $table = $reservation->diningTable;
+        if ($table && $table->trang_thai === TableStatus::AVAILABLE) {
+            $table->trang_thai = TableStatus::RESERVED;
+            $table->save();
+        }
 
         return $reservation;
     }

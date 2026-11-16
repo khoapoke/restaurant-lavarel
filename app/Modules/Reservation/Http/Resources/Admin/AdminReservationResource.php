@@ -30,12 +30,19 @@ class AdminReservationResource extends JsonResource
         $account = $this->relationLoaded('account') ? $this->account : $this->account()->first();
         $userProfile = $account ? ($account->relationLoaded('userProfile') ? $account->userProfile : $account->userProfile()->first()) : null;
 
+        $depositAmount = (float) ($this->tien_coc ?? 0);
+        $isDepositPaid = (bool) ($this->da_thanh_toan_coc ?? false);
+        $depositDeadline = $this->han_chot_coc ? $this->han_chot_coc->toIso8601String() : null;
+
         return [
             'reservationId' => (int) $this->reservationId,
             'reservationTime' => $reservationTime,
             'guestCount' => (int) $this->guestCount,
             'status' => $statusName,
             'note' => $this->note,
+            'depositAmount' => $depositAmount,
+            'isDepositPaid' => $isDepositPaid,
+            'depositDeadline' => $depositDeadline,
             'table' => $table ? new AdminTableResource($table) : null,
             'customer' => $account ? [
                 'accountId' => (int) $account->ma_tai_khoan,

@@ -268,5 +268,68 @@ class PaymentService
         $perPage = (int) ($params['perPage'] ?? 10);
         return $query->paginate($perPage);
     }
+
+    /**
+     * Manually confirm payment by Staff/Manager (PAY-03).
+     *
+     * @param int $paymentId
+     * @param string|null $note
+     * @param int|null $staffId
+     * @return array<string, mixed>
+     * @throws HttpException
+     */
+    public function confirmPayment(int $paymentId, ?string $note = null, ?int $staffId = null): array
+    {
+        $payment = Payment::with('order')
+            ->where('ma_thanh_toan', $paymentId)
+            ->first();
+
+        if (!$payment) {
+            throw new HttpException(404, 'Payment transaction not found');
+        }
+
+        if ($payment->trang_thai === PaymentStatus::REFUNDED) {
+            throw new HttpException(400, 'Cannot confirm a refunded payment');
+        }
+
+        $payment->trang_thai = PaymentStatus::PAID;
+        if (empty($payment->ma_giao_dich)) {
+            $payment->ma_giao_dich = 'MANUAL-' . strtoupper(uniqid());
+        }
+
+        $logData = [
+            'type' => 'manual_confirmation',
+            'confirmed_by' => $staffId ? "staff_{$staffId}" : 'staff_or_admin',
+            'note' => $note ?? 'Confirmed manually by restaurant staff',
+            'time' => now()->toIso8601String(),
+        ];
+        $payment->log_callback = json_encode($logData);
+        $payment->save();
+
+        // Tự động đồng bộ trạng thái đơn hàng: PENDING_CONFIRMATION -> CONFIRMED
+        $order = $payment->order;
+        if ($order && $order->trang_thai === OrderStatus::PENDING_CONFIRMATION) {
+            $order->trang_thai = OrderStatus::CONFIRMED;
+            $order->save();
+        }
+
+        $pStatus = $payment->trang_thai instanceof PaymentStatus
+            ? $payment->trang_thai->name
+            : (PaymentStatus::tryFrom($payment->trang_thai)?->name ?? (string) $payment->trang_thai);
+
+        $oStatus = $order?->trang_thai instanceof OrderStatus
+            ? $order->trang_thai->name
+            : (OrderStatus::tryFrom($order?->trang_thai)?->name ?? (string) $order?->trang_thai);
+
+        return [
+            'paymentId' => (int) $payment->paymentId,
+            'orderId' => (int) $payment->orderId,
+            'amount' => (float) $payment->amount,
+            'status' => $pStatus,
+            'transactionCode' => $payment->ma_giao_dich,
+            'orderStatus' => $oStatus,
+            'confirmedAt' => now()->toIso8601String(),
+        ];
+    }
 }
 

@@ -4,8 +4,10 @@ namespace App\Modules\Core\Enums;
 
 enum ReservationStatus: string
 {
+    case PENDING_DEPOSIT = 'Chờ đặt cọc';
     case PENDING = 'Chờ xử lý';
     case CONFIRMED = 'Đã xác nhận';
+    case OCCUPIED = 'Đang có khách';
     case REJECTED = 'Từ chối';
     case CANCELLED = 'Đã hủy';
     case COMPLETED = 'Hoàn thành';

@@ -182,5 +182,62 @@ class OrderService
             'status' => 'CANCELLED',
         ];
     }
+
+    /**
+     * Staff/Admin confirms payment received for order (ORD-13).
+     *
+     * @param int $orderId
+     * @param string|null $note
+     * @param int|null $staffId
+     * @return array<string, mixed>
+     * @throws HttpException
+     */
+    public function confirmPayment(int $orderId, ?string $note = null, ?int $staffId = null): array
+    {
+        $order = Order::with('payment')
+            ->where('ma_don_hang', $orderId)
+            ->first();
+
+        if (!$order) {
+            throw new HttpException(404, 'Order not found');
+        }
+
+        $payment = $order->payment;
+        if (!$payment) {
+            $payment = \App\Modules\Payment\Models\Payment::create([
+                'so_tien' => $order->tong_tien,
+                'phuong_thuc' => PaymentMethod::BANK_TRANSFER_QR,
+                'trang_thai' => PaymentStatus::PAID,
+                'ma_don_hang' => $order->ma_don_hang,
+                'ma_giao_dich' => 'MANUAL-' . strtoupper(uniqid()),
+            ]);
+        } else {
+            $payment->trang_thai = PaymentStatus::PAID;
+            if (empty($payment->ma_giao_dich)) {
+                $payment->ma_giao_dich = 'MANUAL-' . strtoupper(uniqid());
+            }
+        }
+
+        $payment->log_callback = json_encode([
+            'type' => 'manual_confirmation',
+            'confirmed_by' => $staffId ? "staff_{$staffId}" : 'staff_or_admin',
+            'note' => $note ?? 'Confirmed manually by restaurant staff',
+            'time' => now()->toIso8601String(),
+        ]);
+        $payment->save();
+
+        if ($order->trang_thai === OrderStatus::PENDING_CONFIRMATION) {
+            $order->trang_thai = OrderStatus::CONFIRMED;
+            $order->save();
+        }
+
+        return [
+            'orderId' => (int) $order->orderId,
+            'paymentId' => (int) $payment->paymentId,
+            'paymentStatus' => 'PAID',
+            'orderStatus' => $order->trang_thai instanceof OrderStatus ? $order->trang_thai->name : (string) $order->trang_thai,
+            'amount' => (float) $payment->so_tien,
+        ];
+    }
 }
 

@@ -155,6 +155,28 @@ class ReservationController extends BaseController
             'status' => 'CANCELLED',
         ], 'Reservation cancelled successfully', Response::HTTP_OK);
     }
+
+    /**
+     * Mock successful deposit payment for customer reservation (BKG-13).
+     *
+     * @param Request $request
+     * @param int $reservationId
+     * @return JsonResponse
+     */
+    public function mockDeposit(Request $request, int $reservationId): JsonResponse
+    {
+        $account = $request->user();
+        $reservation = $this->reservationService->mockDepositSuccess(
+            (int) $account->ma_tai_khoan,
+            $reservationId
+        );
+
+        return $this->successResponse(
+            new ReservationResource($reservation),
+            'Deposit paid successfully (mocked). Reservation confirmed.',
+            Response::HTTP_OK
+        );
+    }
 }
 
 

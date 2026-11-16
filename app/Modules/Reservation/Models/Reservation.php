@@ -21,12 +21,18 @@ class Reservation extends Model
         'ghi_chu',
         'ma_tai_khoan',
         'ma_ban',
+        'tien_coc',
+        'da_thanh_toan_coc',
+        'han_chot_coc',
     ];
 
     protected $casts = [
         'thoi_gian' => 'datetime',
         'so_luong_khach' => 'integer',
         'trang_thai' => ReservationStatus::class,
+        'tien_coc' => 'float',
+        'da_thanh_toan_coc' => 'boolean',
+        'han_chot_coc' => 'datetime',
     ];
 
     // Accessors / Mutators
@@ -80,6 +86,30 @@ class Reservation extends Model
         return Attribute::make(
             get: fn () => $this->ma_ban,
             set: fn ($value) => ['ma_ban' => $value]
+        );
+    }
+
+    protected function depositAmount(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => (float) ($this->tien_coc ?? 0),
+            set: fn ($value) => ['tien_coc' => $value]
+        );
+    }
+
+    protected function isDepositPaid(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => (bool) $this->da_thanh_toan_coc,
+            set: fn ($value) => ['da_thanh_toan_coc' => $value]
+        );
+    }
+
+    protected function depositDeadline(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->han_chot_coc,
+            set: fn ($value) => ['han_chot_coc' => $value]
         );
     }
 
