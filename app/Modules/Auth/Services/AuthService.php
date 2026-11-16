@@ -2,14 +2,17 @@
 
 namespace App\Modules\Auth\Services;
 
+use App\Modules\Auth\Mail\ResetPasswordOtpMail;
 use App\Modules\Auth\Models\Account;
 use App\Modules\Auth\Models\Role;
 use App\Modules\Auth\Models\UserProfile;
 use App\Modules\Core\Enums\AccountStatus;
 use App\Modules\Core\Enums\RoleType;
+use Carbon\Carbon;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class AuthService
@@ -148,6 +151,92 @@ class AuthService
         } elseif ($token && method_exists($token, 'delete')) {
             $token->delete();
         }
+    }
+
+    /**
+     * Request password reset OTP via email (USR-07).
+     *
+     * @param string $email
+     * @return void
+     * @throws HttpException
+     */
+    public function forgotPassword(string $email): void
+    {
+        $account = Account::where('email', $email)->first();
+
+        if (!$account) {
+            throw new HttpException(404, 'Email không tồn tại trong hệ thống.');
+        }
+
+        if ($account->trang_thai === AccountStatus::LOCKED || $account->status === AccountStatus::LOCKED) {
+            throw new HttpException(403, 'Tài khoản đang bị khóa, không thể yêu cầu đặt lại mật khẩu.');
+        }
+
+        // Tạo mã OTP 6 số ngẫu nhiên
+        $otp = sprintf('%06d', random_int(100000, 999999));
+
+        // Lưu bản ghi vào bảng password_reset_tokens
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            [
+                'token' => Hash::make($otp),
+                'created_at' => now(),
+            ]
+        );
+
+        // Lấy thời gian hết hạn OTP từ cấu hình (mặc định 15 phút)
+        $expireMinutes = (int) config('auth.passwords.users.expire', 15);
+
+        // Gửi email OTP
+        $recipientName = $account->userProfile?->ho_ten ?? $account->ten_dang_nhap;
+        Mail::to($account->email)->send(new ResetPasswordOtpMail($otp, $recipientName, $expireMinutes));
+    }
+
+    /**
+     * Verify OTP and reset password (USR-08).
+     *
+     * @param string $email
+     * @param string $otp
+     * @param string $newPassword
+     * @return void
+     * @throws HttpException
+     */
+    public function resetPassword(string $email, string $otp, string $newPassword): void
+    {
+        $record = DB::table('password_reset_tokens')->where('email', $email)->first();
+
+        if (!$record) {
+            throw new HttpException(400, 'Không tìm thấy yêu cầu đặt lại mật khẩu cho email này.');
+        }
+
+        // Lấy thời gian hết hạn OTP từ cấu hình (mặc định 15 phút)
+        $expireMinutes = (int) config('auth.passwords.users.expire', 15);
+
+        // Kiểm tra thời gian hết hạn
+        if (Carbon::parse($record->created_at)->addMinutes($expireMinutes)->isPast()) {
+            DB::table('password_reset_tokens')->where('email', $email)->delete();
+            throw new HttpException(400, "Mã OTP đã hết hạn (hết hiệu lực trong {$expireMinutes} phút). Vui lòng yêu cầu mã mới.");
+        }
+
+        // Kiểm tra khớp mã OTP
+        if (!Hash::check($otp, $record->token)) {
+            throw new HttpException(400, 'Mã OTP không chính xác.');
+        }
+
+        $account = Account::where('email', $email)->first();
+        if (!$account) {
+            throw new HttpException(404, 'Tài khoản không tồn tại.');
+        }
+
+        // Cập nhật mật khẩu mới băm bằng BCrypt
+        $account->mat_khau = Hash::make($newPassword);
+        $account->save();
+
+        // Xóa token OTP đã sử dụng
+        DB::table('password_reset_tokens')->where('email', $email)->delete();
+
+        // Thu hồi toàn bộ token đăng nhập cũ của tài khoản
+        $account->tokens()->delete();
     }
 }
 

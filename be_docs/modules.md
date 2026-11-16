@@ -50,6 +50,8 @@
 | `USR-04` | `GET` | `/api/v1/customer/profile` | Lấy thông tin hồ sơ cá nhân & dị ứng | `X` |
 | `USR-05` | `PUT` | `/api/v1/customer/profile` | Cập nhật thông tin cá nhân & dị ứng | `X` |
 | `USR-06` | `PUT` | `/api/v1/customer/password` | Đổi mật khẩu tài khoản | `X` |
+| `USR-07` | `POST` | `/api/v1/auth/forgot-password` | Gửi mã OTP đặt lại mật khẩu về email | `X` |
+| `USR-08` | `POST` | `/api/v1/auth/reset-password` | Xác thực OTP & Đặt lại mật khẩu mới | `X` |
 | `ADM-01` | `GET` | `/api/v1/admin/accounts` | Danh sách tài khoản (phân trang, lọc role/status) | `X` |
 | `ADM-02` | `GET` | `/api/v1/admin/accounts/{id}` | Chi tiết tài khoản & thông tin nhân viên/khách | `X` |
 | `ADM-03` | `POST` | `/api/v1/admin/accounts/staff` | Tạo mới tài khoản Nhân viên phục vụ | `X` |

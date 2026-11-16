@@ -2,8 +2,10 @@
 
 namespace App\Modules\Auth\Http\Controllers;
 
+use App\Modules\Auth\Http\Requests\ForgotPasswordRequest;
 use App\Modules\Auth\Http\Requests\LoginRequest;
 use App\Modules\Auth\Http\Requests\RegisterRequest;
+use App\Modules\Auth\Http\Requests\ResetPasswordRequest;
 use App\Modules\Auth\Http\Resources\AccountResource;
 use App\Modules\Auth\Services\AuthService;
 use App\Modules\Core\Http\Controllers\BaseController;
@@ -70,6 +72,44 @@ class AuthController extends BaseController
         $this->authService->logout($user);
 
         return $this->successResponse(null, 'Logged out successfully', 200);
+    }
+
+    /**
+     * Request password reset OTP via email (USR-07).
+     *
+     * @param ForgotPasswordRequest $request
+     * @return JsonResponse
+     */
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $this->authService->forgotPassword($request->input('email'));
+
+        return $this->successResponse(
+            null,
+            'Mã xác thực OTP đã được gửi về email của bạn. Vui lòng kiểm tra hộp thư.',
+            200
+        );
+    }
+
+    /**
+     * Reset password with OTP (USR-08).
+     *
+     * @param ResetPasswordRequest $request
+     * @return JsonResponse
+     */
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $this->authService->resetPassword(
+            $request->input('email'),
+            $request->input('otp'),
+            $request->input('password')
+        );
+
+        return $this->successResponse(
+            null,
+            'Đặt lại mật khẩu thành công. Vui lòng đăng nhập với mật khẩu mới.',
+            200
+        );
     }
 }
 

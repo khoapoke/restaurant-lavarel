@@ -24,7 +24,8 @@ Module **Auth** chịu trách nhiệm quản lý toàn bộ vòng đời tài kh
 | **Models** | `Account` (`TAI_KHOAN`)<br>`UserProfile` (`NGUOI_DUNG`)<br>`Role` (`VAI_TRO`) | Quản lý tài khoản đăng nhập (ẩn `mat_khau`), thông tin cá nhân và vai trò hệ thống. |
 | **Services** | `AuthService`<br>`Customer\ProfileService`<br>`Admin\AccountService` | Xử lý transaction đăng ký/đăng nhập, cập nhật hồ sơ, quản trị tài khoản và Rule `AUTH-LOCK`. |
 | **Controllers** | `AuthController`<br>`Customer\ProfileController`<br>`Admin\AccountController` | Tiếp nhận request, gọi Service và trả về qua `ApiResponse`. |
-| **FormRequests** | `RegisterRequest`, `LoginRequest`<br>`Customer\UpdateProfileRequest` | Kiểm thực dữ liệu đầu vào. |
+| **FormRequests** | `RegisterRequest`, `LoginRequest`<br>`Customer\UpdateProfileRequest`<br>`ForgotPasswordRequest`, `ResetPasswordRequest` | Kiểm thực dữ liệu đầu vào. |
+| **Mails** | `ResetPasswordOtpMail` | Gửi email chứa mã OTP 6 số (hạn 15 phút) định dạng HTML đẹp mắt đến người dùng. |
 | **Resources** | `AccountResource`, `UserProfileResource`<br>`CustomerProfileResource`, `AdminAccountResource` | Định dạng dữ liệu đầu ra chuẩn JSON cho Frontend. |
 | **Routes** | `app/Modules/Auth/Routes/api.php` | Định tuyến `/api/v1/auth/*`, `/api/v1/customer/*`, `/api/v1/admin/accounts/*`. |
 
@@ -97,6 +98,8 @@ Model `Account` luôn bật thuộc tính `protected $hidden = ['mat_khau'];`. 1
 | `USR-04` | `GET` | `/api/v1/customer/profile` | `CUSTOMER` | *(Không)* | `UserProfileResource` (Schema 4.1) | `200` |
 | `USR-05` | `PUT` | `/api/v1/customer/profile` | `CUSTOMER` | `{ "fullName", "phoneNumber", "birthDate", "savedAddresses", "allergies", "dietaryPreferences" }` | `UserProfileResource` đã cập nhật | `200` |
 | `USR-06` | `PUT` | `/api/v1/customer/password` | `CUSTOMER` | `{ "currentPassword", "newPassword", "newPassword_confirmation" }` | `{ "message": "Password changed successfully" }` (Thu hồi toàn bộ token cũ) | `200` |
+| `USR-07` | `POST` | `/api/v1/auth/forgot-password` | Public | `{ "email" }` | `{ "message": "Mã xác thực OTP đã được gửi về email của bạn..." }` *(Chi tiết tại Mục 6)* | `200 / 404 / 403 / 422` |
+| `USR-08` | `POST` | `/api/v1/auth/reset-password` | Public | `{ "email", "otp", "password", "password_confirmation" }` | `{ "message": "Đặt lại mật khẩu thành công..." }` (Thu hồi toàn bộ token cũ) | `200 / 400 / 404 / 422` |
 | `ADM-01` | `GET` | `/api/v1/admin/accounts` | `ADMIN` | Query: `page`, `perPage`, `search`, `role`, `status` | Paginated `[AdminAccountResource]` | `200` |
 | `ADM-02` | `GET` | `/api/v1/admin/accounts/{id}` | `ADMIN` | *(Không)* | `AdminAccountResource` (Schema 4.2) | `200 / 404` |
 | `ADM-03` | `POST` | `/api/v1/admin/accounts/staff` | `ADMIN` | `{ "username", "password", "password_confirmation", "fullName", "phoneNumber", "birthDate"? }` | `201`: `AdminAccountResource` nhân viên mới | `201 / 422` |
@@ -220,5 +223,53 @@ flowchart TD
     "code": 200,
     "message": "Account has been locked and all active sessions revoked successfully",
     "data": { "accountId": 5, "username": "staff_bad", "status": "LOCKED" }
+  }
+  ```
+
+---
+
+### UC USR-07: Yêu Cầu Mã OTP Quên Mật Khẩu
+- **Actor:** Khách vãng lai / Khách quên mật khẩu (Public).
+- **Endpoint:** `POST /api/v1/auth/forgot-password`
+- **Validation:** `email`: `required|email`
+- **Luồng thực thi:**
+  1. Kiểm tra email có tồn tại trong bảng `TAI_KHOAN` không $\rightarrow$ nếu không có, trả về `404 Not Found` (*"Email không tồn tại trong hệ thống."*).
+  2. Kiểm tra trạng thái tài khoản $\rightarrow$ nếu `LOCKED`, trả về `403 Forbidden` (*"Tài khoản đang bị khóa..."*).
+  3. Tạo mã OTP ngẫu nhiên gồm 6 chữ số (ví dụ: `849201`).
+  4. Băm mã OTP bằng BCrypt và lưu vào bảng `password_reset_tokens` cùng mốc thời gian `created_at = now()` (sử dụng `updateOrInsert` theo email).
+  5. Gửi email chứa mã OTP đến địa chỉ email của người dùng bằng Mailable `ResetPasswordOtpMail` (mẫu HTML tiếng Việt trang nhã, hiệu lực trong 15 phút).
+- **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "code": 200,
+    "message": "Mã xác thực OTP đã được gửi về email của bạn. Vui lòng kiểm tra hộp thư.",
+    "data": null
+  }
+  ```
+
+---
+
+### UC USR-08: Xác Nhận OTP & Đặt Lại Mật Khẩu Mới
+- **Actor:** Khách vãng lai / Khách quên mật khẩu (Public).
+- **Endpoint:** `POST /api/v1/auth/reset-password`
+- **Validation:**
+  - `email`: `required|email`
+  - `otp`: `required|string|size:6`
+  - `password`: `required|string|min:6|confirmed`
+- **Luồng thực thi:**
+  1. Tìm bản ghi trong `password_reset_tokens` theo `email` $\rightarrow$ nếu không thấy, trả về `400 Bad Request`.
+  2. Kiểm tra thời hạn OTP $\rightarrow$ nếu đã quá 15 phút (`addMinutes(15)->isPast()`), xóa bản ghi và trả về `400 Bad Request` (*"Mã OTP đã hết hạn..."*).
+  3. So khớp mã OTP (`Hash::check($otp, $record->token)`) $\rightarrow$ nếu sai, trả về `400 Bad Request` (*"Mã OTP không chính xác."*).
+  4. Cập nhật mật khẩu mới đã băm BCrypt (`Hash::make($newPassword)`) vào bảng `TAI_KHOAN`.
+  5. Xóa mã OTP đã sử dụng khỏi `password_reset_tokens`.
+  6. Thu hồi toàn bộ token đăng nhập cũ của tài khoản (`$account->tokens()->delete()`) để bảo mật tuyệt đối.
+- **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "code": 200,
+    "message": "Đặt lại mật khẩu thành công. Vui lòng đăng nhập với mật khẩu mới.",
+    "data": null
   }
   ```
