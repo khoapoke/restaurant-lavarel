@@ -196,6 +196,7 @@ Server sẽ chạy tại địa chỉ: `http://127.0.0.1:8000` (Prefix API: `htt
 | **4** | `kh1` | `123` | `CUSTOMER` | `khachhang1@gmail.com` | `ACTIVE` | Kiểm thử cơ chế **Auto-Upgrade BCrypt** trong lần login đầu tiên |
 | **5** | `kh2` | `123` | `CUSTOMER` | `khachhang2@gmail.com` | `ACTIVE` | Kiểm thử Khách hàng đặt món, giỏ hàng, đặt bàn |
 | **6** | `kh_locked` | `123` | `CUSTOMER` | `locked@gmail.com` | `LOCKED` | Kiểm thử middleware `account.active` chặn 403 Forbidden |
+| **7** | `bian` | `123` | `CUSTOMER` | `anomyous41@gmail.com` | `ACTIVE` | tài khoản kiểm thử cho email |
 
 ---
 

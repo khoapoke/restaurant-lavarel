@@ -30,6 +30,7 @@ class AccountSeeder extends Seeder
         $profileKh1 = UserProfile::where('so_dien_thoai', '0923456789')->firstOrFail();
         $profileKh2 = UserProfile::where('so_dien_thoai', '0934567890')->firstOrFail();
         $profileKhLocked = UserProfile::where('so_dien_thoai', '0945678901')->firstOrFail();
+        $profileUser1=UserProfile::where('so_dien_thoai', '0945678999')->firstOrFail();
 
         $accounts = [
             [
@@ -78,6 +79,14 @@ class AccountSeeder extends Seeder
                 'email' => 'locked@gmail.com',
                 'trang_thai' => AccountStatus::LOCKED,
                 'ma_nguoi_dung' => $profileKhLocked->ma_nguoi_dung,
+                'ma_vai_tro' => $roleCustomer->ma_vai_tro,
+            ],
+            [
+                'ten_dang_nhap' => 'bian',
+                'mat_khau' => Hash::make('123'),
+                'email' => 'anomyous41@gmail.com',
+                'trang_thai' => AccountStatus::ACTIVE,
+                'ma_nguoi_dung' => $profileUser1->ma_nguoi_dung,
                 'ma_vai_tro' => $roleCustomer->ma_vai_tro,
             ],
         ];

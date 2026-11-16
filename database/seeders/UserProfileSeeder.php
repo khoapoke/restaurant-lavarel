@@ -62,6 +62,15 @@ class UserProfileSeeder extends Seeder
                 'che_do_an' => [],
                 'so_dia_chi' => ['99 Xô Viết Nghệ Tĩnh, Bình Thạnh, TP.HCM'],
             ],
+            [
+                'ho_ten' => 'Người Dùng Bí Ẩn',
+                'ngay_sinh' => '2000-01-01',
+                'dia_chi' => 'TP. Hồ Chí Minh',
+                'so_dien_thoai' => '0945678999',
+                'di_ung' => [],
+                'che_do_an' => [],
+                'so_dia_chi' => ['TP. Hồ Chí Minh'],
+            ],
         ];
 
         foreach ($profiles as $profile) {
