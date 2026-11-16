@@ -96,9 +96,10 @@ stateDiagram-v2
 | `ORD-02` | `PUT` | `/api/v1/customer/orders/{id}/cancel` | `CUSTOMER` | `{ "cancelReason": string }` | `OrderResource` (Status `CANCELLED`) | `200 / 409` |
 | `ORD-04` | `GET` | `/api/v1/customer/orders` | `CUSTOMER` | Query: `page`, `status` | Paginated `[OrderResource]` | `200` |
 | `ORD-05` | `GET` | `/api/v1/customer/orders/{id}` | `CUSTOMER` | *(Không)* | `OrderResource` chi tiết | `200 / 404` |
-| `ORD-06` | `GET` | `/api/v1/admin/orders` | `ADMIN` | Query: `page`, `status`, `date` | Paginated `[AdminOrderResource]` | `200` |
-| `ORD-07` | `GET` | `/api/v1/admin/orders/{id}` | `ADMIN` | *(Không)* | `AdminOrderResource` chi tiết | `200 / 404` |
-| `ORD-08` | `PATCH`| `/api/v1/admin/orders/{id}/status` | `ADMIN` | `{ "targetStatus": string, "cancelReason"?: string }` | `AdminOrderResource` *(Chi tiết FSM tại Mục 6)* | `200 / 400` |
+| `ORD-06` | `GET` | `/api/v1/admin/orders` | `ADMIN,STAFF` | Query: `page`, `status`, `date` | Paginated `[AdminOrderResource]` | `200` |
+| `ORD-07` | `GET` | `/api/v1/admin/orders/{id}` | `ADMIN,STAFF` | *(Không)* | `AdminOrderResource` chi tiết | `200 / 404` |
+| `ORD-08` | `PATCH`| `/api/v1/admin/orders/{id}/status` | `ADMIN,STAFF` | `{ "targetStatus": string, "cancelReason"?: string }` | `AdminOrderResource` *(Chi tiết FSM tại Mục 6)* | `200 / 400` |
+| `ORD-13` | `POST`| `/api/v1/admin/orders/{id}/confirm-payment` | `ADMIN,STAFF` | `{ "note"?: string }` | Xác nhận đơn đã thanh toán thành công | `200 / 404` |
 
 ---
 

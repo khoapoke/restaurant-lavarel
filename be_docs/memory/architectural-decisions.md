@@ -346,6 +346,43 @@ Tài liệu này lưu trữ các quyết định về kiến trúc, cấu trúc 
   - **Chỉ mục tổng thể:** Cập nhật `be_docs/README.md` làm cửa ngõ duy nhất. Xóa bỏ các tệp trùng lặp (`laravel_restful_api_specifications.md`, `business_logic_and_validation_rules.md`, `be_docs/api/`).
   - **Chuẩn hóa Thuật ngữ Kỹ thuật:** Phân biệt tường minh giữa **"Luồng thực thi" (Execution Flow)** cho các nghiệp vụ transaction/CRUD/FSM thông thường (`auth`, `menu`, `order`, `reservation`, `payment`) và **"Thuật toán" (Algorithm)** dành riêng cho giải thuật tính toán khoa học máy tính (`recommendation` - Neo4j Graph Cypher Traversal, Collaborative Filtering).
 
+## ADR-025: Triển Khai Đặt Cọc Bàn Tinh Gọn (Conditional Peak-Hour Deposit)
+- **Ngày quyết định:** 2026-11-17
+- **Bối cảnh:**
+  - Nhằm giải quyết tình trạng khách đặt bàn nhóm đông vào giờ cao điểm nhưng không đến (no-show), nhà hàng cần cơ chế đặt cọc giữ chỗ tinh gọn, giảm thiểu tối đa sự phức tạp trong nghiệp vụ kế toán để tránh phát sinh lỗi.
+  - Thống nhất mô hình đặt cọc tinh gọn theo các nguyên tắc:
+    1. **Điều kiện cọc:** Chỉ áp dụng khi `so_luong_khach >= 6` VÀ thời gian đặt rơi vào Giờ cao điểm (`11:30 - 13:30` hoặc `18:00 - 20:30`, mọi ngày trong tuần). Các trường hợp khác miễn phí đặt cọc (`tien_coc = 0`).
+    2. **Mức tiền cọc:** Cố định `50.000 VNĐ / khách` (`guestCount * 50000`).
+    3. **Cơ chế giữ bàn 15 phút:** Phiếu cọc có trạng thái ban đầu `PENDING_DEPOSIT` và `han_chot_coc = now() + 15 phút`. Bàn được bảo vệ bởi công thức $\pm 119$ phút. Quá 15 phút chưa cọc $\rightarrow$ hết hạn, bàn tự động mở lại cho khách khác đặt.
+    4. **Không khấu trừ hóa đơn:** Khi khách đến nhận bàn (`OCCUPIED`), nhân viên hoàn trả trực tiếp tiền mặt cọc cho khách.
+    5. **Chính sách hủy:** Áp dụng quy tắc báo trước $\ge 60$ phút, hoàn lại 100% tiền cọc.
+    6. **Hỗ trợ kiểm thử & Webhook:** Hỗ trợ `POST /api/v1/customer/reservations/{id}/mock-deposit` cho FE giả lập cọc thành công, `POST /api/v1/admin/reservations/{id}/confirm-deposit` cho nhân viên xác nhận tại quầy, và tự động xử lý tiền cọc khi nhận webhook chuyển khoản với nội dung `DB{id}`.
+- **Quyết định kỹ thuật:**
+  - **Migration:** Tạo `2026_11_17_010000_add_deposit_columns_to_dat_ban_table.php` bổ sung `tien_coc` (`DECIMAL(18,2)`), `da_thanh_toan_coc` (`BOOLEAN`), `han_chot_coc` (`DATETIME`).
+  - **Enum:** Mở rộng `ReservationStatus` với `case PENDING_DEPOSIT = 'Chờ đặt cọc';`.
+  - **Model:** Cập nhật `Reservation` với `$fillable`, `$casts`, và các accessors `depositAmount`, `isDepositPaid`, `depositDeadline`.
+  - **Service:** Cập nhật `Customer\ReservationService` với `isPeakHour`, `calculateDeposit`, `mockDepositSuccess`, mở rộng điều kiện kiểm tra xung đột loại trừ các phiếu cọc đã hết hạn; cập nhật `Admin\ReservationService` với `confirmDeposit`.
+  - **Resources:** Bổ sung `depositAmount`, `isDepositPaid`, `depositDeadline`, `qrCodeUrl` (VietQR `DB{id} COC`) vào `ReservationResource` và `AdminReservationResource`.
+  - **Payment Webhook:** Hỗ trợ regex `/DB(\d+)/i` trong `PaymentService::processWebhook` và `PaymentController::handleCallback`.
+  - **Testing:** Viết bộ test `tests/Feature/ReservationDepositTest.php` với 8 bài kiểm tra chuyên sâu, đạt 45/45 tests toàn dự án (100% green).
+
+## ADR-026: Tái Cấu Trúc Xác Nhận Thanh Toán Thủ Công (Staff Manual Payment Confirmation & Mock Workflow)
+- **Ngày quyết định:** 2026-11-17
+- **Bối cảnh:**
+  - Nhà hàng không sử dụng cổng thanh toán trung gian bên thứ ba (SePay / PayOS) do hạn chế đăng ký tài khoản doanh nghiệp.
+  - Khách hàng thanh toán qua mã tĩnh/động VietQR Napas 247 chuyển tiền trực tiếp vào tài khoản ngân hàng của chủ nhà hàng.
+  - Cần cơ chế để Nhân viên / Thu ngân / Quản lý kiểm tra thông báo biến động số dư và chủ động xác nhận thanh toán thành công bằng tay trên hệ thống Admin/POS.
+  - Cần endpoint Mock thanh toán cho phía Frontend và kiểm thử viên có thể hoàn thành chu trình đặt hàng/đặt cọc mà không cần giao dịch ngân hàng thật.
+- **Quyết định kỹ thuật:**
+  - **Phân quyền Route:** Mở rộng quyền truy cập nhóm `admin/payments` và `admin/orders` cho cả vai trò `ADMIN` và `STAFF` (`role:ADMIN,STAFF`).
+  - **API Xác nhận thanh toán đơn hàng:**
+    - `POST /api/v1/admin/payments/{paymentId}/confirm`: Nhân viên xác nhận giao dịch thanh toán thành công, hệ thống đổi `Payment.trang_thai = PAID`, gán `ma_giao_dich = MANUAL-...`, ghi log nhân viên và tự động đồng bộ đơn hàng sang `CONFIRMED`.
+    - `POST /api/v1/admin/orders/{orderId}/confirm-payment`: Cung cấp đường dẫn xác nhận trực tiếp từ trang quản lý đơn hàng.
+  - **API Mock thanh toán (Frontend Testing):**
+    - `POST /api/v1/customer/payments/{orderId}/mock-payment`: Khách hàng giả lập quét mã QR thanh toán thành công, tự động đưa đơn vào chế biến.
+    - Giữ nguyên `POST /api/v1/customer/reservations/{reservationId}/mock-deposit` cho cọc bàn.
+  - **Kiểm thử tự động:** Viết `tests/Feature/ManualPaymentConfirmationTest.php` với 5 ca kiểm thử đạt 50/50 tests xanh toàn bộ dự án (100% green).
+
 
 
 
