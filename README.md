@@ -191,10 +191,11 @@ Server sẽ chạy tại địa chỉ: `http://127.0.0.1:8000` (Prefix API: `htt
 | STT | Username | Mật khẩu | Vai trò (`Role`) | Email | Trạng thái | Mục đích kiểm thử API |
 | :---: | :--- | :---: | :--- | :--- | :---: | :--- |
 | **1** | `admin` | `Password@123` | `ADMIN` | `admin@restaurant.com` | `ACTIVE` | Toàn quyền kiểm thử các API Quản trị (`/api/v1/admin/*`) |
-| **2** | `staff1` | `Password@123` | `STAFF` | `staff1@restaurant.com` | `ACTIVE` | Kiểm thử nghiệp vụ Bếp, Phục vụ, Xếp bàn, Thu ngân |
-| **3** | `kh1` | `123` | `CUSTOMER` | `khachhang1@gmail.com` | `ACTIVE` | Kiểm thử cơ chế **Auto-Upgrade BCrypt** trong lần login đầu tiên |
-| **4** | `kh2` | `Password@123` | `CUSTOMER` | `khachhang2@gmail.com` | `ACTIVE` | Kiểm thử Khách hàng đặt món, giỏ hàng, đặt bàn |
-| **5** | `kh_locked` | `Password@123` | `CUSTOMER` | `locked@gmail.com` | `LOCKED` | Kiểm thử middleware `account.active` chặn 403 Forbidden |
+| **2** | `admin1` | `123` | `ADMIN` | `admin@restaurant.com` | `ACTIVE` | Tài khoản admin phụ để test |
+| **3** | `staff1` | `123` | `STAFF` | `staff1@restaurant.com` | `ACTIVE` | Kiểm thử nghiệp vụ Bếp, Phục vụ, Xếp bàn, Thu ngân |
+| **4** | `kh1` | `123` | `CUSTOMER` | `khachhang1@gmail.com` | `ACTIVE` | Kiểm thử cơ chế **Auto-Upgrade BCrypt** trong lần login đầu tiên |
+| **5** | `kh2` | `123` | `CUSTOMER` | `khachhang2@gmail.com` | `ACTIVE` | Kiểm thử Khách hàng đặt món, giỏ hàng, đặt bàn |
+| **6** | `kh_locked` | `123` | `CUSTOMER` | `locked@gmail.com` | `LOCKED` | Kiểm thử middleware `account.active` chặn 403 Forbidden |
 
 ---
 
